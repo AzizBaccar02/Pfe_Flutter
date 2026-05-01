@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+
 import 'login_screen.dart';
-import 'signup_screen.dart';
+import 'role_intro_screen.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
 
-  void _goToSignup(BuildContext context, String role) {
+  void _goToRoleIntro(BuildContext context, String role) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SignupScreen(role: role),
+        builder: (_) => RoleIntroScreen(role: role),
       ),
     );
   }
@@ -24,7 +25,6 @@ class RoleSelectionScreen extends StatelessWidget {
             'assets/images/Welcome.jpg',
             fit: BoxFit.cover,
           ),
-
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -39,7 +39,6 @@ class RoleSelectionScreen extends StatelessWidget {
               ),
             ),
           ),
-
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -67,7 +66,6 @@ class RoleSelectionScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 28),
-
                   Container(
                     height: 58,
                     decoration: BoxDecoration(
@@ -82,7 +80,7 @@ class RoleSelectionScreen extends StatelessWidget {
                               topLeft: Radius.circular(30),
                               bottomLeft: Radius.circular(30),
                             ),
-                            onTap: () => _goToSignup(context, 'CLIENT'),
+                            onTap: () => _goToRoleIntro(context, 'CLIENT'),
                             child: const Center(
                               child: Text(
                                 "I'm a client",
@@ -105,7 +103,7 @@ class RoleSelectionScreen extends StatelessWidget {
                               topRight: Radius.circular(30),
                               bottomRight: Radius.circular(30),
                             ),
-                            onTap: () => _goToSignup(context, 'AGENT'),
+                            onTap: () => _goToRoleIntro(context, 'AGENT'),
                             child: const Center(
                               child: Text(
                                 "I'm a freelancer",
@@ -121,7 +119,6 @@ class RoleSelectionScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 28),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,

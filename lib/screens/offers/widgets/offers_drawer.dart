@@ -7,35 +7,18 @@ import 'package:provider/provider.dart';
 import '../../../conf/user_profile_provider.dart';
 import '../../../data/mock_client_data.dart';
 import '../../auth/client/client_profile_screen.dart';
-import '../../auth/role_selection_screen.dart';
 import '../../settings/settings_screen.dart';
 import 'offers_drawer_item.dart';
 
 class OffersDrawer extends StatelessWidget {
   final bool isDarkMode;
-  final String? fallbackAssetPath;
 
   const OffersDrawer({
     super.key,
     required this.isDarkMode,
-    this.fallbackAssetPath,
   });
 
-  Widget _buildProfileImage(String? imagePath) {
-    if (imagePath != null && imagePath.isNotEmpty) {
-      return Image.file(
-        File(imagePath),
-        fit: BoxFit.cover,
-      );
-    }
-
-    if (fallbackAssetPath != null && fallbackAssetPath!.isNotEmpty) {
-      return Image.asset(
-        fallbackAssetPath!,
-        fit: BoxFit.cover,
-      );
-    }
-
+  Widget _emptyAvatar() {
     return Center(
       child: HugeIcon(
         icon: HugeIcons.strokeRoundedUser,
@@ -47,73 +30,26 @@ class OffersDrawer extends StatelessWidget {
     );
   }
 
-  Future<void> _handleLogout(BuildContext context) async {
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        final dialogBackground =
-            isDarkMode ? const Color(0xFF141414) : Colors.white;
-        final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-        final secondaryTextColor = isDarkMode
-            ? Colors.white.withOpacity(0.62)
-            : Colors.black.withOpacity(0.58);
+  Widget _buildProfileImage(UserProfileProvider profileProvider) {
+    final localPath = profileProvider.localProfileImagePath;
+    final remoteUrl = profileProvider.remoteProfileImageUrl;
 
-        return AlertDialog(
-          backgroundColor: dialogBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          title: Text(
-            'Logout',
-            style: TextStyle(
-              color: primaryTextColor,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          content: Text(
-            'Are you sure you want to logout from JobMatch?',
-            style: TextStyle(
-              color: secondaryTextColor,
-              height: 1.45,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(
-                'Cancel',
-                style: TextStyle(
-                  color: secondaryTextColor,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text(
-                'Logout',
-                style: TextStyle(
-                  color: Colors.redAccent,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+    if (localPath != null && localPath.isNotEmpty) {
+      return Image.file(
+        File(localPath),
+        fit: BoxFit.cover,
+      );
+    }
 
-    if (shouldLogout != true || !context.mounted) return;
+    if (remoteUrl != null && remoteUrl.isNotEmpty) {
+      return Image.network(
+        remoteUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _emptyAvatar(),
+      );
+    }
 
-    context.read<UserProfileProvider>().setProfileImagePath(null);
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const RoleSelectionScreen(),
-      ),
-      (route) => false,
-    );
+    return _emptyAvatar();
   }
 
   @override
@@ -128,7 +64,6 @@ class OffersDrawer extends StatelessWidget {
         : Colors.black.withOpacity(0.6);
 
     final profileProvider = Provider.of<UserProfileProvider>(context);
-    final profileImagePath = profileProvider.profileImagePath;
 
     return Drawer(
       backgroundColor: backgroundColor,
@@ -177,7 +112,7 @@ class OffersDrawer extends StatelessWidget {
                                   : Colors.black.withOpacity(0.06),
                             ),
                             child: ClipOval(
-                              child: _buildProfileImage(profileImagePath),
+                              child: _buildProfileImage(profileProvider),
                             ),
                           ),
                         ),
@@ -238,7 +173,7 @@ class OffersDrawer extends StatelessWidget {
                 title: 'Logout',
                 isDarkMode: isDarkMode,
                 color: Colors.redAccent,
-                onTap: () => _handleLogout(context),
+                onTap: () {},
               ),
               const SizedBox(height: 12),
             ],

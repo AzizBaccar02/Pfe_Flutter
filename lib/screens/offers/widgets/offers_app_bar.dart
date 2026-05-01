@@ -10,66 +10,55 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool isDarkMode;
   final VoidCallback onProfileTap;
   final VoidCallback onNotificationTap;
-  final String? fallbackAssetPath;
-  final bool showNotificationDot;
 
   const OffersAppBar({
     super.key,
     required this.isDarkMode,
     required this.onProfileTap,
     required this.onNotificationTap,
-    this.fallbackAssetPath,
-    this.showNotificationDot = false,
   });
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
-  Widget _buildProfileImage(String? imagePath) {
-    if (imagePath != null && imagePath.isNotEmpty) {
-      return Image.file(
-        File(imagePath),
-        fit: BoxFit.cover,
-      );
-    }
-
-    if (fallbackAssetPath != null && fallbackAssetPath!.isNotEmpty) {
-      return Image.asset(
-        fallbackAssetPath!,
-        fit: BoxFit.cover,
-      );
-    }
-
+  Widget _emptyAvatar() {
     return Center(
       child: HugeIcon(
         icon: HugeIcons.strokeRoundedUser,
         color: isDarkMode
-            ? Colors.white.withOpacity(0.72)
-            : Colors.black.withOpacity(0.72),
+            ? Colors.white.withOpacity(0.7)
+            : Colors.black.withOpacity(0.7),
         size: 16,
       ),
     );
   }
 
+  Widget _buildProfileImage(UserProfileProvider profileProvider) {
+    final localPath = profileProvider.localProfileImagePath;
+    final remoteUrl = profileProvider.remoteProfileImageUrl;
+
+    if (localPath != null && localPath.isNotEmpty) {
+      return Image.file(
+        File(localPath),
+        fit: BoxFit.cover,
+      );
+    }
+
+    if (remoteUrl != null && remoteUrl.isNotEmpty) {
+      return Image.network(
+        remoteUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _emptyAvatar(),
+      );
+    }
+
+    return _emptyAvatar();
+  }
+
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
     final profileProvider = Provider.of<UserProfileProvider>(context);
-    final profileImagePath = profileProvider.profileImagePath;
-
-    final shellColor = isDarkMode
-        ? accentYellow.withOpacity(0.10)
-        : accentYellow.withOpacity(0.14);
-
-    final innerShellColor = isDarkMode
-        ? accentYellow.withOpacity(0.12)
-        : accentYellow.withOpacity(0.18);
-
-    final neutralIconColor = isDarkMode
-        ? Colors.white.withOpacity(0.72)
-        : Colors.black.withOpacity(0.72);
 
     return AppBar(
       backgroundColor: backgroundColor,
@@ -86,10 +75,9 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
             width: 42,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: shellColor,
-              border: Border.all(
-                color: accentYellow.withOpacity(isDarkMode ? 0.24 : 0.34),
-              ),
+              color: isDarkMode
+                  ? Colors.white.withOpacity(0.08)
+                  : Colors.black.withOpacity(0.08),
             ),
             child: Center(
               child: Container(
@@ -97,10 +85,12 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
                 width: 32,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: innerShellColor,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.06)
+                      : Colors.black.withOpacity(0.06),
                 ),
                 child: ClipOval(
-                  child: _buildProfileImage(profileImagePath),
+                  child: _buildProfileImage(profileProvider),
                 ),
               ),
             ),
@@ -112,48 +102,24 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
           padding: const EdgeInsets.only(right: 16),
           child: GestureDetector(
             onTap: onNotificationTap,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  height: 42,
-                  width: 42,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: shellColor,
-                    border: Border.all(
-                      color: accentYellow.withOpacity(isDarkMode ? 0.24 : 0.34),
-                    ),
-                  ),
-                  child: Center(
-                    child: HugeIcon(
-                      icon: HugeIcons.strokeRoundedNotification01,
-                      color: neutralIconColor,
-                      size: 18,
-                    ),
-                  ),
+            child: Container(
+              height: 42,
+              width: 42,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.08)
+                    : Colors.black.withOpacity(0.08),
+              ),
+              child: Center(
+                child: HugeIcon(
+                  icon: HugeIcons.strokeRoundedNotification01,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.7)
+                      : Colors.black.withOpacity(0.7),
+                  size: 18,
                 ),
-                if (showNotificationDot)
-                  Positioned(
-                    right: 2,
-                    top: 2,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: BoxDecoration(
-                        color: accentYellow,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: accentYellow.withOpacity(0.35),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
         ),

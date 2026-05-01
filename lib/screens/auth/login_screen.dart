@@ -3,10 +3,13 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
 import '../../conf/theme_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/primary_button.dart';
 import '../../widgets/social_button.dart';
 import '../offers/client/client_main_screen.dart';
+import 'complete_profile_prompt_screen.dart';
+import 'email_verification_screen.dart';
 import 'forgot_password_email_screen.dart';
 import 'widgets/auth_prompt.dart';
 import 'widgets/divider_with_text.dart';
@@ -25,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isPasswordVisible = false;
   bool _isLoading = false;
+  String? _errorMessage;
 
   String? _validateEmail(String? value) {
     if (value == null || value.trim().isEmpty) {
@@ -47,34 +51,90 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
+    FocusScope.of(context).unfocus();
+
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 700));
+    try {
+      final response = await AuthService.login(
+        email: emailController.text.trim(),
+        password: passwordController.text,
+      );
 
-    if (!mounted) return;
+      await AuthService.saveLoginSession(response);
+      final hasSeenPrompt = await AuthService.hasSeenCompleteProfilePrompt();
 
-    setState(() {
-      _isLoading = false;
-    });
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Login successful!'),
-        backgroundColor: Colors.green,
-      ),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Login successful!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const ClientEntryScreen(),
-      ),
-      (route) => false,
-    );
+      if (!hasSeenPrompt) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CompleteProfilePromptScreen(
+              role: response.role,
+            ),
+          ),
+          (route) => false,
+        );
+        return;
+      }
+
+      final role = response.role.toUpperCase();
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => role == 'CLIENT'
+              ? const ClientEntryScreen()
+              : const AgentEntryPlaceholderScreen(),
+        ),
+        (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+
+      final message = e.message;
+
+      if (message.toLowerCase().contains('verify your email first')) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EmailVerificationScreen(
+              email: emailController.text.trim().toLowerCase(),
+            ),
+          ),
+        );
+      } else {
+        setState(() {
+          _errorMessage = message;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage = 'Unable to login. Please try again.';
+      });
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -195,6 +255,17 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 PrimaryButton(
                   text: _isLoading ? 'Logging in...' : 'Log In',

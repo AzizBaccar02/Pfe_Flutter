@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../../conf/theme_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/primary_button.dart';
 import 'login_screen.dart';
@@ -36,8 +37,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     if (value == null || value.isEmpty) {
       return 'Please enter a new password';
     }
-    if (value.length < 6) {
-      return 'Password must be at least 6 characters';
+    if (value.length < 8) {
+      return 'Password must be at least 8 characters';
     }
     if (!RegExp(r'[A-Z]').hasMatch(value)) {
       return 'Password must contain at least one uppercase letter';
@@ -66,33 +67,55 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       errorMessage = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 900));
+    try {
+      final message = await AuthService.resetPassword(
+        email: widget.email,
+        code: widget.otpCode,
+        newPassword: passwordController.text.trim(),
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      isLoading = false;
-    });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Password reset successful'),
-        backgroundColor: Colors.green,
-      ),
-    );
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const LoginScreen(),
+        ),
+        (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const LoginScreen(),
-      ),
-      (route) => false,
-    );
+      setState(() {
+        errorMessage = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        errorMessage = 'Failed to reset password. Please try again.';
+      });
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDarkMode = themeProvider.isDarkMode;
 
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.black : Colors.white,

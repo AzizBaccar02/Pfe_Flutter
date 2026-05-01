@@ -3,7 +3,10 @@ import 'package:provider/provider.dart';
 
 import 'conf/theme_provider.dart';
 import 'conf/user_profile_provider.dart';
+import 'screens/auth/complete_profile_prompt_screen.dart';
 import 'screens/auth/role_selection_screen.dart';
+import 'screens/offers/client/client_main_screen.dart';
+import 'services/auth_service.dart';
 
 void main() {
   runApp(
@@ -37,8 +40,60 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: const RoleSelectionScreen(),
+      home: const AppStartupGate(),
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+class AppStartupGate extends StatelessWidget {
+  const AppStartupGate({super.key});
+
+  Future<Widget> _resolveStartScreen() async {
+    final hasSession = await AuthService.hasActiveSession();
+
+    if (!hasSession) {
+      return const RoleSelectionScreen();
+    }
+
+    final role = (await AuthService.getStoredRole() ?? '').toUpperCase();
+    final hasSeenPrompt = await AuthService.hasSeenCompleteProfilePrompt();
+
+    if (!hasSeenPrompt) {
+      return CompleteProfilePromptScreen(role: role);
+    }
+
+    if (role == 'CLIENT') {
+      return const ClientEntryScreen();
+    }
+
+    return const AgentEntryPlaceholderScreen();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
+
+    return FutureBuilder<Widget>(
+      future: _resolveStartScreen(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Scaffold(
+            backgroundColor: isDarkMode ? Colors.black : Colors.white,
+            body: Center(
+              child: CircularProgressIndicator(
+                color: isDarkMode ? Colors.white : Colors.black,
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const RoleSelectionScreen();
+        }
+
+        return snapshot.data ?? const RoleSelectionScreen();
+      },
     );
   }
 }
