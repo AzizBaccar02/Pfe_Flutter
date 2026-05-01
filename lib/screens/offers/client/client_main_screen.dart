@@ -2,17 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../auth/client/client_profile_screen.dart';
-import '../../chats/chat_conversation_screen.dart';
-import '../../chats/chats_screen.dart';
-import '../../notifications/notification_center_screen.dart';
+import '../../../conf/user_profile_provider.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../data/mock_client_data.dart';
-import '../../../data/mock_notification_data.dart';
-import '../../../data/mock_chat_data.dart';
 import '../../../models/interested_agent_model.dart';
+import '../../../services/profile_service.dart';
+import '../../auth/client/client_profile_screen.dart';
 import 'client_home_screen.dart';
 import 'interested_agents_screen.dart';
+import '../../chats/chats_screen.dart';
 import 'create_offer_screen.dart';
 import 'my_offers_screen.dart';
 import '../widgets/offers_app_bar.dart';
@@ -45,10 +43,31 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
   final Set<int> _processedAgentIds = {};
   final List<InterestedAgentModel> _matchedAgents = [];
 
-  bool get _hasUnreadChats {
-    return _matchedAgents.any(
-      (agent) => MockChatData.getUnreadCountForAgent(agent.id) > 0,
-    );
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hydrateProfileImage();
+    });
+  }
+
+  Future<void> _hydrateProfileImage() async {
+    try {
+      final profile = await ProfileService.getClientProfile();
+      if (!mounted) return;
+
+      final provider = context.read<UserProfileProvider>();
+      final remoteUrl = ProfileService.resolveMediaUrl(profile.photoUrl);
+
+      if (remoteUrl != null && remoteUrl.isNotEmpty) {
+        provider.setRemoteProfileImageUrl(remoteUrl);
+        return;
+      }
+
+      if ((provider.localProfileImagePath ?? '').isEmpty) {
+        provider.clearProfileImage();
+      }
+    } catch (_) {}
   }
 
   void _handleProcessedAgent(InterestedAgentModel agent) {
@@ -60,47 +79,45 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
   void _handleMatchedAgent(InterestedAgentModel agent) {
     final alreadyExists = _matchedAgents.any((item) => item.id == agent.id);
 
-    if (alreadyExists) return;
-
-    setState(() {
-      _matchedAgents.insert(0, agent);
-    });
-  }
-
-  void _openMatchedChat(InterestedAgentModel agent) {
-    final alreadyExists = _matchedAgents.any((item) => item.id == agent.id);
-
     if (!alreadyExists) {
       setState(() {
         _matchedAgents.insert(0, agent);
+        _selectedIndex = 4;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF151515),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          content: Row(
+            children: [
+              const HugeIcon(
+                icon: HugeIcons.strokeRoundedFavourite,
+                color: Color(0xFF22C55E),
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Match created with ${agent.name}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      setState(() {
+        _selectedIndex = 4;
       });
     }
-
-    setState(() {
-      _selectedIndex = 4;
-    });
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatConversationScreen(agent: agent),
-      ),
-    ).then((_) {
-      if (!mounted) return;
-      setState(() {});
-    });
-  }
-
-  Future<void> _openNotifications() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const NotificationCenterScreen(),
-      ),
-    );
-
-    if (!mounted) return;
-    setState(() {});
   }
 
   @override
@@ -126,14 +143,9 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
         hiddenAgentIds: _processedAgentIds,
         onProcessed: _handleProcessedAgent,
         onMatched: _handleMatchedAgent,
-        onStartChatting: _openMatchedChat,
       ),
       ChatsScreen(
         matchedAgents: _matchedAgents,
-        onChatStateChanged: () {
-          if (!mounted) return;
-          setState(() {});
-        },
       ),
     ];
 
@@ -142,16 +154,13 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       backgroundColor: backgroundColor,
       drawer: OffersDrawer(
         isDarkMode: isDarkMode,
-        fallbackAssetPath: 'assets/images/Profil.jpg',
       ),
       appBar: OffersAppBar(
         isDarkMode: isDarkMode,
-        fallbackAssetPath: 'assets/images/Profil.jpg',
         onProfileTap: () {
           _scaffoldKey.currentState?.openDrawer();
         },
-        onNotificationTap: _openNotifications,
-        showNotificationDot: MockNotificationData.hasUnread,
+        onNotificationTap: () {},
       ),
       body: screens[_selectedIndex],
       bottomNavigationBar: OffersBottomBar(
@@ -162,7 +171,6 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
         onAddTap: () => setState(() => _selectedIndex = 2),
         onInterestedTap: () => setState(() => _selectedIndex = 3),
         onChatsTap: () => setState(() => _selectedIndex = 4),
-        showChatsDot: _hasUnreadChats,
       ),
     );
   }

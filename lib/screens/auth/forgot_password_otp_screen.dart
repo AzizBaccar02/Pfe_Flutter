@@ -3,6 +3,7 @@ import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
 import 'package:provider/provider.dart';
 
 import '../../conf/theme_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/primary_button.dart';
 import 'reset_password_screen.dart';
 
@@ -23,64 +24,65 @@ class _ForgotPasswordOtpScreenState extends State<ForgotPasswordOtpScreen> {
   String otpCode = '';
   String? errorMessage;
   bool isLoading = false;
-
-  Future<bool> _checkOtpWithBackend(String code) async {
-    await Future.delayed(const Duration(seconds: 1));
-
-    // TODO: replace with real backend API call
-    return code == '123456';
-  }
+  bool isResending = false;
 
   Future<void> _verifyOtp(String code) async {
-    if (code.length != 6) {
+    if (code.trim().length != 6) {
       setState(() {
         errorMessage = 'Please enter the 6-digit verification code.';
       });
       return;
     }
 
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    final isValid = await _checkOtpWithBackend(code);
-
-    if (!mounted) return;
-
-    setState(() {
-      isLoading = false;
-    });
-
-    if (isValid) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ResetPasswordScreen(
-            email: widget.email,
-            otpCode: code,
-          ),
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ResetPasswordScreen(
+          email: widget.email,
+          otpCode: code.trim(),
         ),
-      );
-    } else {
-      setState(() {
-        errorMessage = 'Invalid verification code. Please try again.';
-      });
-    }
-  }
-
-  void _resendCode() {
-    setState(() {
-      errorMessage = null;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Verification code resent'),
       ),
     );
+  }
 
-    // TODO: call resend code API
+  Future<void> _resendCode() async {
+    setState(() {
+      isResending = true;
+      errorMessage = null;
+    });
+
+    try {
+      final message = await AuthService.forgotPassword(
+        email: widget.email,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        errorMessage = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        errorMessage = 'Unable to resend code. Please try again.';
+      });
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        isResending = false;
+      });
+    }
   }
 
   @override
@@ -212,9 +214,9 @@ class _ForgotPasswordOtpScreenState extends State<ForgotPasswordOtpScreen> {
               const SizedBox(height: 16),
               Center(
                 child: TextButton(
-                  onPressed: _resendCode,
+                  onPressed: isResending ? null : _resendCode,
                   child: Text(
-                    'Resend code',
+                    isResending ? 'Resending...' : 'Resend code',
                     style: TextStyle(
                       color: primaryTextColor,
                       fontWeight: FontWeight.w600,

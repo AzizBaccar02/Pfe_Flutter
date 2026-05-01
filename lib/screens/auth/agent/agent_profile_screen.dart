@@ -41,7 +41,7 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
     if (_didInitImage) return;
     _didInitImage = true;
 
-    final savedPath = context.read<UserProfileProvider>().profileImagePath;
+    final savedPath = context.read<UserProfileProvider>().localProfileImagePath;
     if (savedPath != null && savedPath.isNotEmpty) {
       selectedProfileImage = XFile(savedPath);
     }
@@ -141,7 +141,7 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                     });
                     context
                         .read<UserProfileProvider>()
-                        .setProfileImagePath(image?.path);
+                        .setLocalProfileImagePath(image?.path);
                   },
                 ),
                 const SizedBox(height: 18),

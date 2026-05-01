@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../../conf/theme_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/primary_button.dart';
 import 'forgot_password_otp_screen.dart';
@@ -43,34 +44,50 @@ class _ForgotPasswordEmailScreenState extends State<ForgotPasswordEmailScreen> {
       errorMessage = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 900));
+    try {
+      final message = await AuthService.forgotPassword(
+        email: emailController.text.trim(),
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      isLoading = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Verification code sent successfully.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ForgotPasswordOtpScreen(
-          email: emailController.text.trim(),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
         ),
-      ),
-    );
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ForgotPasswordOtpScreen(
+            email: emailController.text.trim(),
+          ),
+        ),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        errorMessage = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        errorMessage = 'Failed to send reset code. Please try again.';
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDarkMode = themeProvider.isDarkMode;
 
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.black : Colors.white,

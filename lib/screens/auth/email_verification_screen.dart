@@ -3,8 +3,10 @@ import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
 import 'package:provider/provider.dart';
 
 import '../../conf/theme_provider.dart';
+import '../../services/auth_service.dart';
 import '../../widgets/primary_button.dart';
-import 'verification_success_screen.dart';
+import '../offers/client/client_main_screen.dart';
+import 'complete_profile_prompt_screen.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   final String email;
@@ -23,23 +25,10 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   String otpCode = '';
   String? errorMessage;
   bool isLoading = false;
-
-  Future<bool> _checkOtpWithBackend(String code) async {
-    await Future.delayed(const Duration(seconds: 1));
-
-    // TODO: Replace this with your real backend API call
-    // Example:
-    // final result = await AuthService.verifyEmailOtp(
-    //   email: widget.email,
-    //   otp: code,
-    // );
-    // return result;
-
-    return code == '123456';
-  }
+  bool isResending = false;
 
   Future<void> _verifyOtp(String code) async {
-    if (code.length != 6) {
+    if (code.trim().length != 6) {
       setState(() {
         errorMessage = 'Please enter the 6-digit verification code.';
       });
@@ -51,40 +40,105 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       errorMessage = null;
     });
 
-    final isValid = await _checkOtpWithBackend(code);
+    try {
+      final message = await AuthService.verifyEmail(
+        email: widget.email,
+        code: code,
+      );
 
-    if (!mounted) return;
+      final role = (await AuthService.getStoredRole() ?? '').toUpperCase();
+      final hasSeenPrompt = await AuthService.hasSeenCompleteProfilePrompt();
 
-    setState(() {
-      isLoading = false;
-    });
+      if (!mounted) return;
 
-    if (isValid) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const VerificationSuccessScreen(),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
         ),
       );
-    } else {
+
+      if (!hasSeenPrompt) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CompleteProfilePromptScreen(
+              role: role,
+            ),
+          ),
+          (route) => false,
+        );
+        return;
+      }
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => role == 'CLIENT'
+              ? const ClientEntryScreen()
+              : const AgentEntryPlaceholderScreen(),
+        ),
+        (route) => false,
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+
       setState(() {
-        errorMessage = 'Invalid verification code. Please try again.';
+        errorMessage = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        errorMessage = 'Unable to verify email. Please try again.';
+      });
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
       });
     }
   }
 
-  void _resendCode() {
+  Future<void> _resendCode() async {
     setState(() {
+      isResending = true;
       errorMessage = null;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Verification code resent'),
-      ),
-    );
+    try {
+      final message = await AuthService.resendVerificationCode(
+        email: widget.email,
+      );
 
-    // TODO: Call resend OTP API here
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        errorMessage = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        errorMessage = 'Unable to resend code. Please try again.';
+      });
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        isResending = false;
+      });
+    }
   }
 
   @override
@@ -217,9 +271,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               const SizedBox(height: 16),
               Center(
                 child: TextButton(
-                  onPressed: _resendCode,
+                  onPressed: isResending ? null : _resendCode,
                   child: Text(
-                    'Resend code',
+                    isResending ? 'Resending...' : 'Resend code',
                     style: TextStyle(
                       color: primaryTextColor,
                       fontWeight: FontWeight.w600,
