@@ -5,6 +5,7 @@ import 'conf/theme_provider.dart';
 import 'conf/user_profile_provider.dart';
 import 'screens/auth/complete_profile_prompt_screen.dart';
 import 'screens/auth/role_selection_screen.dart';
+import 'screens/offers/agent/agent_main_screen.dart';
 import 'screens/offers/client/client_main_screen.dart';
 import 'services/auth_service.dart';
 
@@ -67,7 +68,11 @@ class AppStartupGate extends StatelessWidget {
       return const ClientEntryScreen();
     }
 
-    return const AgentEntryPlaceholderScreen();
+    if (role == 'AGENT') {
+      return const AgentEntryScreen();
+    }
+
+    return const RoleSelectionScreen();
   }
 
   @override

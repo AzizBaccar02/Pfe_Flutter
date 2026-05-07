@@ -5,8 +5,9 @@ import 'package:provider/provider.dart';
 import '../../conf/theme_provider.dart';
 import '../../services/auth_service.dart';
 import '../offers/client/client_main_screen.dart';
-import 'agent/agent_profile_screen.dart';
+import '../offers/agent/agent_main_screen.dart';
 import 'client/client_complete_profile_flow_screen.dart';
+import 'agent/agent_complete_profile_flow_screen.dart';
 
 class CompleteProfilePromptScreen extends StatelessWidget {
   final String role;
@@ -44,7 +45,7 @@ class CompleteProfilePromptScreen extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => _isClient
             ? const ClientEntryScreen()
-            : const AgentEntryPlaceholderScreen(),
+            : const AgentEntryScreen(),
       ),
       (route) => false,
     );
@@ -60,7 +61,7 @@ class CompleteProfilePromptScreen extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => _isClient
             ? const ClientCompleteProfileFlowScreen()
-            : const AgentProfileScreen(),
+            : const AgentCompleteProfileFlowScreen(),
       ),
     );
   }
