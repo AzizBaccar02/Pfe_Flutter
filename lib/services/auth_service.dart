@@ -35,6 +35,10 @@ class AuthService {
 
   static Uri _uri(String path) => Uri.parse('$_baseUrl$path');
 
+  static String get apiBaseUrl => _baseUrl;
+
+  static Uri apiUri(String path) => _uri(path);
+
   static Future<SignUpResponse> signUp({
     required String username,
     required String email,
@@ -102,8 +106,7 @@ class AuthService {
     );
 
     if (decoded is Map<String, dynamic>) {
-      return (decoded['message'] ?? 'Verification code resent.')
-          .toString();
+      return (decoded['message'] ?? 'Verification code resent.').toString();
     }
 
     return 'Verification code resent.';
@@ -294,9 +297,8 @@ class AuthService {
           )
           .timeout(const Duration(seconds: 20));
 
-      final dynamic decoded = response.body.isNotEmpty
-          ? jsonDecode(response.body)
-          : null;
+      final dynamic decoded =
+          response.body.isNotEmpty ? jsonDecode(response.body) : null;
 
       if (response.statusCode == expectedStatusCode) {
         return decoded;
