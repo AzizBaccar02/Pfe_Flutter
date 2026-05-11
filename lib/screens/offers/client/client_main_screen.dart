@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../../conf/user_profile_provider.dart';
 import '../../../conf/theme_provider.dart';
-import '../../../data/mock_client_data.dart';
+import '../../../conf/user_profile_provider.dart';
 import '../../../models/interested_agent_model.dart';
 import '../../../services/chat_service.dart';
 import '../../../services/profile_service.dart';
@@ -18,6 +17,7 @@ import '../../notifications/widgets/app_notification_listener.dart';
 import 'client_home_screen.dart';
 import 'interested_agents_screen.dart';
 import 'create_offer_screen.dart';
+import 'interested_agents_screen.dart';
 import 'my_offers_screen.dart';
 import '../widgets/offers_app_bar.dart';
 import '../widgets/offers_bottom_bar.dart';
@@ -28,10 +28,6 @@ class ClientEntryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!MockClientData.isProfileCompleted) {
-      return const ClientProfileCompletionScreen();
-    }
-
     return const ClientMainScreen();
   }
 }
@@ -103,13 +99,48 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
 
       if (remoteUrl != null && remoteUrl.isNotEmpty) {
         provider.setRemoteProfileImageUrl(remoteUrl);
-        return;
-      }
-
-      if ((provider.localProfileImagePath ?? '').isEmpty) {
+      } else {
         provider.clearProfileImage();
       }
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      context.read<UserProfileProvider>().clearProfileImage();
+    }
+  }
+
+  void _selectTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+      _appBarHideProgress = 0;
+    });
+  }
+
+  void _goToHome() {
+    _selectTab(0);
+  }
+
+  void _goToMyOffers() {
+    _selectTab(1);
+  }
+
+  void _goToCreateOffer() {
+    _selectTab(2);
+  }
+
+  void _goToInterestedAgents() {
+    _selectTab(3);
+  }
+
+  void _goToChats() {
+    _selectTab(4);
+  }
+
+  void _handleOfferCreated() {
+    setState(() {
+      _offersRefreshSeed++;
+      _selectedIndex = 1;
+      _appBarHideProgress = 0;
+    });
   }
 
   Future<void> _openNotifications() async {
@@ -160,6 +191,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       setState(() {
         _matchedAgents.insert(0, agent);
         _selectedIndex = 4;
+        _appBarHideProgress = 0;
       });
 
       _syncUnreadChatCount();
@@ -201,12 +233,31 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     }
   }
 
+  void _openNotifications() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const NotificationCenterScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDarkMode = themeProvider.isDarkMode;
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
+
+    const baseAppBarHeight = kToolbarHeight;
+
+    final visibleHeight = _selectedIndex == 0
+        ? baseAppBarHeight * (1 - _appBarHideProgress)
+        : baseAppBarHeight;
+
+    final visibleOpacity = _selectedIndex == 0
+        ? (1 - _appBarHideProgress).clamp(0.0, 1.0)
+        : 1.0;
 
     final screens = [
       ClientHomeScreen(
@@ -215,7 +266,6 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
         onInterestedTap: () => _changeTab(3),
         onChatsTap: () => _changeTab(4),
       ),
-      const MyOffersScreen(),
       CreateOfferScreen(
         onBack: () => _changeTab(0),
       ),
@@ -236,6 +286,10 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       backgroundColor: backgroundColor,
       drawer: OffersDrawer(
         isDarkMode: isDarkMode,
+        onMyOffersTap: _goToMyOffers,
+        onCreateOfferTap: _goToCreateOffer,
+        onInterestedTap: _goToInterestedAgents,
+        onChatsTap: _goToChats,
       ),
       appBar: OffersAppBar(
         isDarkMode: isDarkMode,
@@ -290,6 +344,13 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       ),
     );
   }
+
+  @override
+  void dispose() {
+    _homeScrollController.removeListener(_handleHomeScroll);
+    _homeScrollController.dispose();
+    super.dispose();
+  }
 }
 
 class ClientProfileCompletionScreen extends StatelessWidget {
@@ -325,8 +386,8 @@ class ClientProfileCompletionScreen extends StatelessWidget {
                 HugeIcon(
                   icon: HugeIcons.strokeRoundedUser,
                   color: isDarkMode
-                      ? Colors.white.withOpacity(0.7)
-                      : Colors.black.withOpacity(0.7),
+                      ? Colors.white.withValues(alpha: 0.7)
+                      : Colors.black.withValues(alpha: 0.7),
                   size: 18,
                 ),
                 const SizedBox(height: 20),
@@ -346,8 +407,8 @@ class ClientProfileCompletionScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: isDarkMode
-                        ? Colors.white.withOpacity(0.68)
-                        : Colors.black.withOpacity(0.68),
+                        ? Colors.white.withValues(alpha: 0.68)
+                        : Colors.black.withValues(alpha: 0.68),
                     fontSize: 14,
                     height: 1.5,
                   ),
