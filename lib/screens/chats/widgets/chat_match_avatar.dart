@@ -1,16 +1,18 @@
+// lib/screens/chats/widgets/chat_match_avatar.dart
+
 import 'package:flutter/material.dart';
 
-import '../../../models/interested_agent_model.dart';
+import '../../../models/chat_conversation_summary_model.dart';
 
 class ChatMatchAvatar extends StatelessWidget {
-  final InterestedAgentModel agent;
+  final ChatConversationSummaryModel chat;
   final Color primaryTextColor;
   final bool hasUnread;
   final VoidCallback? onTap;
 
   const ChatMatchAvatar({
     super.key,
-    required this.agent,
+    required this.chat,
     required this.primaryTextColor,
     required this.hasUnread,
     this.onTap,
@@ -18,53 +20,83 @@ class ChatMatchAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const accentGreen = Color(0xFF22C55E);
+    const accentGreenSoft = Color(0xFF86EFAC);
+
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
+    final offerName = chat.offerTitle;
+    final initials = _buildInitials(offerName);
+
     return SizedBox(
-      width: 84,
+      width: 96,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Column(
           children: [
             Stack(
+              clipBehavior: Clip.none,
               children: [
                 Container(
-                  width: 74,
-                  height: 74,
+                  width: 76,
+                  height: 76,
                   padding: const EdgeInsets.all(3),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
-                      colors: [
-                        Color(0xFFFFB347),
-                        Color.fromARGB(255, 202, 119, 2),
-                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: hasUnread
+                          ? const [
+                              accentGreenSoft,
+                              accentGreen,
+                            ]
+                          : [
+                              accentGreen.withOpacity(0.34),
+                              accentGreen.withOpacity(0.12),
+                            ],
                     ),
                   ),
                   child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
+                    decoration: BoxDecoration(
+                      color: isDarkMode ? const Color(0xFF0B0F14) : Colors.white,
                       shape: BoxShape.circle,
                     ),
                     child: CircleAvatar(
-                      radius: 32,
-                      backgroundImage: AssetImage(agent.imageUrl),
+                      radius: 33,
+                      backgroundColor:
+                          isDarkMode ? const Color(0xFF111827) : const Color(0xFFF3F4F6),
+                      child: Text(
+                        initials,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: hasUnread
+                              ? accentGreen
+                              : primaryTextColor.withOpacity(0.76),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
                     ),
                   ),
                 ),
                 if (hasUnread)
                   Positioned(
-                    right: 2,
+                    right: 3,
                     top: 4,
                     child: Container(
-                      width: 16,
-                      height: 16,
+                      width: 17,
+                      height: 17,
                       decoration: BoxDecoration(
-                        color: const Color.fromARGB(255, 190, 152, 0),
+                        color: accentGreen,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: Colors.white,
-                          width: 2,
+                          color: isDarkMode
+                              ? const Color(0xFF0B0F14)
+                              : Colors.white,
+                          width: 2.4,
                         ),
                       ),
                     ),
@@ -73,13 +105,26 @@ class ChatMatchAvatar extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              agent.name.split(' ').first,
+              offerName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: primaryTextColor,
-                fontSize: 13,
+                fontSize: 12.8,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.1,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              chat.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: primaryTextColor.withOpacity(0.48),
+                fontSize: 10.5,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -87,5 +132,31 @@ class ChatMatchAvatar extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _buildInitials(String value) {
+    final cleanValue = value.trim();
+
+    if (cleanValue.isEmpty) return '?';
+
+    final parts = cleanValue
+        .split(RegExp(r'\s+'))
+        .where((part) => part.trim().isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return '?';
+
+    if (parts.length == 1) {
+      final word = parts.first;
+
+      if (word.length >= 2) {
+        return word.substring(0, 2).toUpperCase();
+      }
+
+      return word.substring(0, 1).toUpperCase();
+    }
+
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+        .toUpperCase();
   }
 }

@@ -1,3 +1,5 @@
+// lib/screens/chats/widgets/message_composer.dart
+
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -15,98 +17,107 @@ class MessageComposer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowSoft = Color(0xFFFFE082);
-    const accentYellowDeep = Color(0xFF5D4200);
+    const accentGreen = Color(0xFF22C55E);
+
+    final composerColor = isDarkMode ? const Color(0xFF0B0F14) : Colors.white;
 
     final fieldColor =
-        isDarkMode ? const Color(0xFF161616) : const Color(0xFFF3F3F3);
+        isDarkMode ? const Color(0xFF151A21) : const Color(0xFFF1F2F4);
+
+    final textColor = isDarkMode ? Colors.white : const Color(0xFF111827);
 
     final hintColor = isDarkMode
-        ? Colors.white.withOpacity(0.48)
-        : Colors.black.withOpacity(0.46);
-
-    final iconColor = isDarkMode ? Colors.white : Colors.black;
+        ? Colors.white.withOpacity(0.42)
+        : Colors.black.withOpacity(0.38);
 
     final hasText = controller.text.trim().isNotEmpty;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
       decoration: BoxDecoration(
-        color: isDarkMode ? Colors.black : Colors.white,
+        color: composerColor,
         border: Border(
           top: BorderSide(
             color: isDarkMode
                 ? Colors.white.withOpacity(0.06)
-                : Colors.black.withOpacity(0.06),
+                : Colors.black.withOpacity(0.05),
           ),
         ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          SizedBox(
+            width: 34,
+            height: 46,
+            child: Center(
+              child: Icon(
+                Icons.add_rounded,
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.58)
+                    : Colors.black.withOpacity(0.56),
+                size: 24,
+              ),
+            ),
+          ),
           Expanded(
             child: Container(
+              constraints: const BoxConstraints(minHeight: 46),
               decoration: BoxDecoration(
                 color: fieldColor,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(999),
               ),
               child: TextField(
                 controller: controller,
                 minLines: 1,
                 maxLines: 5,
                 textInputAction: TextInputAction.newline,
+                cursorColor: accentGreen,
                 style: TextStyle(
-                  color: isDarkMode ? Colors.white : Colors.black,
+                  color: textColor,
                   fontSize: 14.5,
                   fontWeight: FontWeight.w500,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Write a message...',
+                  hintText: 'Type a message',
                   hintStyle: TextStyle(
                     color: hintColor,
                     fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
+                    horizontal: 18,
+                    vertical: 13,
                   ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           GestureDetector(
             onTap: hasText ? onSend : null,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              width: 52,
-              height: 52,
+              width: 46,
+              height: 46,
               decoration: BoxDecoration(
-                gradient: hasText
-                    ? const LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [
-                          accentYellowSoft,
-                          accentYellow,
-                        ],
-                      )
-                    : null,
                 color: hasText
-                    ? null
+                    ? accentGreen.withOpacity(isDarkMode ? 0.16 : 0.10)
                     : (isDarkMode
-                        ? Colors.white.withOpacity(0.08)
-                        : Colors.black.withOpacity(0.08)),
+                        ? Colors.white.withOpacity(0.06)
+                        : Colors.black.withOpacity(0.06)),
                 shape: BoxShape.circle,
               ),
               child: Center(
                 child: HugeIcon(
                   icon: HugeIcons.strokeRoundedSent,
                   color: hasText
-                      ? accentYellowDeep
-                      : iconColor.withOpacity(0.42),
-                  size: 18,
+                      ? accentGreen
+                      : (isDarkMode
+                          ? Colors.white.withOpacity(0.35)
+                          : Colors.black.withOpacity(0.32)),
+                  size: 22,
                 ),
               ),
             ),
