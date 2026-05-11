@@ -1,17 +1,17 @@
+// lib/screens/offers/widgets/offers_bottom_bar.dart
+
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
-
-import 'offers_bottom_item.dart';
 
 class OffersBottomBar extends StatelessWidget {
   final int selectedIndex;
   final bool isDarkMode;
+  final int chatUnreadCount;
   final VoidCallback onHomeTap;
   final VoidCallback onOffersTap;
   final VoidCallback onAddTap;
   final VoidCallback onInterestedTap;
   final VoidCallback onChatsTap;
-  final bool showChatsDot;
 
   const OffersBottomBar({
     super.key,
@@ -22,125 +22,202 @@ class OffersBottomBar extends StatelessWidget {
     required this.onAddTap,
     required this.onInterestedTap,
     required this.onChatsTap,
-    this.showChatsDot = false,
+    this.chatUnreadCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowSoft = Color(0xFFFFE082);
-    const accentYellowDeep = Color(0xFF5D4200);
+    final backgroundColor =
+        isDarkMode ? const Color(0xFF0E0E0E) : Colors.white;
 
-    final surfaceColor =
-        isDarkMode ? const Color(0xFF101010) : const Color(0xFFF8F8F8);
+    final borderColor = isDarkMode
+        ? Colors.white.withOpacity(0.06)
+        : Colors.black.withOpacity(0.06);
 
-    return Container(
-      height: 84,
-      decoration: BoxDecoration(
-        color: surfaceColor,
-        border: Border(
-          top: BorderSide(
-            color: isDarkMode
-                ? Colors.white.withOpacity(0.06)
-                : Colors.black.withOpacity(0.06),
+    final activeColor = isDarkMode ? Colors.white : Colors.black;
+
+    final inactiveColor = isDarkMode
+        ? Colors.white.withOpacity(0.38)
+        : Colors.black.withOpacity(0.38);
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        height: 58,
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          border: Border(
+            top: BorderSide(color: borderColor),
           ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDarkMode ? 0.18 : 0.05),
-            blurRadius: 18,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         child: Row(
           children: [
             Expanded(
-              child: OffersBottomItem(
-                icon: HugeIcons.strokeRoundedHome03,
+              child: _BottomItem(
+                icon: HugeIcons.strokeRoundedHome01,
                 label: 'Home',
                 selected: selectedIndex == 0,
-                isDarkMode: isDarkMode,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
                 onTap: onHomeTap,
               ),
             ),
             Expanded(
-              child: OffersBottomItem(
-                icon: HugeIcons.strokeRoundedWork,
+              child: _BottomItem(
+                icon: HugeIcons.strokeRoundedBriefcase01,
                 label: 'Offers',
                 selected: selectedIndex == 1,
-                isDarkMode: isDarkMode,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
                 onTap: onOffersTap,
               ),
             ),
             Expanded(
-              child: GestureDetector(
+              child: _BottomItem(
+                icon: HugeIcons.strokeRoundedAdd01,
+                label: 'Add',
+                selected: selectedIndex == 2,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
                 onTap: onAddTap,
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: const LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        accentYellowSoft,
-                        accentYellow,
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: accentYellow.withOpacity(0.28),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const HugeIcon(
-                        icon: HugeIcons.strokeRoundedAdd01,
-                        color: accentYellowDeep,
-                        size: 18,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Add',
-                        style: TextStyle(
-                          color: accentYellowDeep,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               ),
             ),
             Expanded(
-              child: OffersBottomItem(
+              child: _BottomItem(
                 icon: HugeIcons.strokeRoundedFavourite,
                 label: 'Interested',
                 selected: selectedIndex == 3,
-                isDarkMode: isDarkMode,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
                 onTap: onInterestedTap,
               ),
             ),
             Expanded(
-              child: OffersBottomItem(
-                icon: HugeIcons.strokeRoundedMessage01,
+              child: _BottomItem(
+                icon: HugeIcons.strokeRoundedMessage02,
                 label: 'Chats',
                 selected: selectedIndex == 4,
-                isDarkMode: isDarkMode,
+                activeColor: activeColor,
+                inactiveColor: inactiveColor,
                 onTap: onChatsTap,
-                showIndicatorDot: showChatsDot,
+                unreadCount: chatUnreadCount,
+                badgeBackgroundColor: backgroundColor,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomItem extends StatelessWidget {
+  final dynamic icon;
+  final String label;
+  final bool selected;
+  final Color activeColor;
+  final Color inactiveColor;
+  final VoidCallback onTap;
+  final int unreadCount;
+  final Color? badgeBackgroundColor;
+
+  const _BottomItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.onTap,
+    this.unreadCount = 0,
+    this.badgeBackgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? activeColor : inactiveColor;
+    final backgroundColor =
+        badgeBackgroundColor ?? Theme.of(context).scaffoldBackgroundColor;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              HugeIcon(
+                icon: icon,
+                color: color,
+                size: 16,
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  right: -13,
+                  top: -10,
+                  child: _UnreadBadge(
+                    count: unreadCount,
+                    backgroundColor: backgroundColor,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 10.5,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UnreadBadge extends StatelessWidget {
+  final int count;
+  final Color backgroundColor;
+
+  const _UnreadBadge({
+    required this.count,
+    required this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accentGreen = Color(0xFF22C55E);
+
+    return Container(
+      constraints: const BoxConstraints(
+        minWidth: 18,
+        minHeight: 18,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: BoxDecoration(
+        color: accentGreen,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: backgroundColor,
+          width: 2,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w900,
+          height: 1,
         ),
       ),
     );

@@ -8,6 +8,7 @@ import '../../../conf/user_profile_provider.dart';
 
 class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool isDarkMode;
+  final int notificationUnreadCount;
   final VoidCallback onProfileTap;
   final VoidCallback onNotificationTap;
 
@@ -16,6 +17,7 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.isDarkMode,
     required this.onProfileTap,
     required this.onNotificationTap,
+    this.notificationUnreadCount = 0,
   });
 
   @override
@@ -102,28 +104,83 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
           padding: const EdgeInsets.only(right: 16),
           child: GestureDetector(
             onTap: onNotificationTap,
-            child: Container(
-              height: 42,
-              width: 42,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isDarkMode
-                    ? Colors.white.withOpacity(0.08)
-                    : Colors.black.withOpacity(0.08),
-              ),
-              child: Center(
-                child: HugeIcon(
-                  icon: HugeIcons.strokeRoundedNotification01,
-                  color: isDarkMode
-                      ? Colors.white.withOpacity(0.7)
-                      : Colors.black.withOpacity(0.7),
-                  size: 18,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  height: 42,
+                  width: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.08)
+                        : Colors.black.withOpacity(0.08),
+                  ),
+                  child: Center(
+                    child: HugeIcon(
+                      icon: HugeIcons.strokeRoundedNotification01,
+                      color: isDarkMode
+                          ? Colors.white.withOpacity(0.7)
+                          : Colors.black.withOpacity(0.7),
+                      size: 18,
+                    ),
+                  ),
                 ),
-              ),
+                if (notificationUnreadCount > 0)
+                  Positioned(
+                    right: -1,
+                    top: -1,
+                    child: _NotificationBadge(
+                      count: notificationUnreadCount,
+                      borderColor: backgroundColor,
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _NotificationBadge extends StatelessWidget {
+  final int count;
+  final Color borderColor;
+
+  const _NotificationBadge({
+    required this.count,
+    required this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accentGreen = Color(0xFF22C55E);
+
+    return Container(
+      constraints: const BoxConstraints(
+        minWidth: 18,
+        minHeight: 18,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: BoxDecoration(
+        color: accentGreen,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: borderColor,
+          width: 2,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          height: 1,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     );
   }
 }

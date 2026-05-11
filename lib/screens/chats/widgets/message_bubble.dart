@@ -1,3 +1,5 @@
+// lib/screens/chats/widgets/message_bubble.dart
+
 import 'package:flutter/material.dart';
 
 import '../../../models/chat_message_model.dart';
@@ -5,89 +7,123 @@ import '../../../models/chat_message_model.dart';
 class MessageBubble extends StatelessWidget {
   final ChatMessageModel message;
   final bool isDarkMode;
+  final bool isMine;
+  final String avatarInitials;
+  final VoidCallback? onLongPress;
 
   const MessageBubble({
     super.key,
     required this.message,
     required this.isDarkMode,
+    required this.isMine,
+    required this.avatarInitials,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isMine = message.isFromClient;
-
     final bubbleColor = isMine
-        ? const Color.fromARGB(255, 139, 107, 1)
-        : (isDarkMode ? const Color(0xFF1A1A1A) : const Color(0xFFF1F1F1));
+        ? (isDarkMode ? const Color(0xFF166534) : const Color(0xFFD9FDD3))
+        : (isDarkMode ? const Color(0xFF1F2937) : Colors.white);
 
     final messageColor = isMine
-        ? Colors.white
-        : (isDarkMode ? Colors.white : Colors.black);
+        ? (isDarkMode ? Colors.white : const Color(0xFF173D24))
+        : (isDarkMode ? Colors.white : const Color(0xFF111827));
 
     final metaColor = isMine
-        ? Colors.white.withOpacity(0.82)
+        ? (isDarkMode
+            ? Colors.white.withOpacity(0.72)
+            : const Color(0xFF1F6B37).withOpacity(0.72))
         : (isDarkMode
-              ? Colors.white.withOpacity(0.56)
-              : Colors.black.withOpacity(0.50));
+            ? Colors.white.withOpacity(0.48)
+            : Colors.black.withOpacity(0.42));
 
-    return Align(
-      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 300),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
-            decoration: BoxDecoration(
-              color: bubbleColor,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(22),
-                topRight: const Radius.circular(22),
-                bottomLeft: Radius.circular(isMine ? 22 : 8),
-                bottomRight: Radius.circular(isMine ? 8 : 22),
-              ),
+    final shadowColor = isDarkMode
+        ? Colors.black.withOpacity(0.18)
+        : Colors.black.withOpacity(0.06);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment:
+            isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!isMine) ...[
+            _IncomingAvatar(
+              initials: avatarInitials,
+              isDarkMode: isDarkMode,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  message.text,
-                  style: TextStyle(
-                    color: messageColor,
-                    fontSize: 14.5,
-                    height: 1.45,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _formatTime(message.sentAt),
-                      style: TextStyle(
-                        color: metaColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: GestureDetector(
+              onLongPress: onLongPress,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 292),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(13, 9, 11, 7),
+                  decoration: BoxDecoration(
+                    color: bubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(14),
+                      topRight: const Radius.circular(14),
+                      bottomLeft: Radius.circular(isMine ? 14 : 4),
+                      bottomRight: Radius.circular(isMine ? 4 : 14),
                     ),
-                    if (isMine) ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        message.isRead ? 'Seen' : 'Sent',
-                        style: TextStyle(
-                          color: metaColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: shadowColor,
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
                     ],
-                  ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        message.text,
+                        style: TextStyle(
+                          color: messageColor,
+                          fontSize: 14,
+                          height: 1.36,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _formatTime(message.sentAt),
+                            style: TextStyle(
+                              color: metaColor,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (isMine) ...[
+                            const SizedBox(width: 5),
+                            Icon(
+                              message.isRead
+                                  ? Icons.done_all_rounded
+                                  : Icons.done_rounded,
+                              size: 15,
+                              color: message.isRead
+                                  ? const Color(0xFF10B981)
+                                  : metaColor,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -97,5 +133,32 @@ class MessageBubble extends StatelessWidget {
     final minute = date.minute.toString().padLeft(2, '0');
     final suffix = date.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $suffix';
+  }
+}
+
+class _IncomingAvatar extends StatelessWidget {
+  final String initials;
+  final bool isDarkMode;
+
+  const _IncomingAvatar({
+    required this.initials,
+    required this.isDarkMode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CircleAvatar(
+      radius: 10,
+      backgroundColor:
+          isDarkMode ? const Color(0xFF374151) : const Color(0xFFE5E7EB),
+      child: Text(
+        initials.isNotEmpty ? initials.substring(0, 1) : '?',
+        style: TextStyle(
+          color: isDarkMode ? Colors.white : const Color(0xFF4B5563),
+          fontSize: 8,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
   }
 }

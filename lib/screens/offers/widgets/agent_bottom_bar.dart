@@ -1,9 +1,12 @@
+// lib/screens/offers/widgets/agent_bottom_bar.dart
+
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class AgentBottomBar extends StatelessWidget {
   final int selectedIndex;
   final bool isDarkMode;
+  final int chatUnreadCount;
   final ValueChanged<int> onTap;
 
   const AgentBottomBar({
@@ -11,6 +14,7 @@ class AgentBottomBar extends StatelessWidget {
     required this.selectedIndex,
     required this.isDarkMode,
     required this.onTap,
+    this.chatUnreadCount = 0,
   });
 
   @override
@@ -64,6 +68,8 @@ class AgentBottomBar extends StatelessWidget {
             (index) {
               final item = items[index];
               final isSelected = index == selectedIndex;
+              final isChatsItem = index == 3;
+              final unreadCount = isChatsItem ? chatUnreadCount : 0;
 
               return Expanded(
                 child: GestureDetector(
@@ -73,10 +79,24 @@ class AgentBottomBar extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      HugeIcon(
-                        icon: item.icon,
-                        color: isSelected ? activeColor : inactiveColor,
-                        size: 16,
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          HugeIcon(
+                            icon: item.icon,
+                            color: isSelected ? activeColor : inactiveColor,
+                            size: 16,
+                          ),
+                          if (unreadCount > 0)
+                            Positioned(
+                              right: -13,
+                              top: -10,
+                              child: _UnreadBadge(
+                                count: unreadCount,
+                                backgroundColor: backgroundColor,
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 3),
                       Text(
@@ -97,6 +117,47 @@ class AgentBottomBar extends StatelessWidget {
               );
             },
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnreadBadge extends StatelessWidget {
+  final int count;
+  final Color backgroundColor;
+
+  const _UnreadBadge({
+    required this.count,
+    required this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accentGreen = Color(0xFF22C55E);
+
+    return Container(
+      constraints: const BoxConstraints(
+        minWidth: 18,
+        minHeight: 18,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: BoxDecoration(
+        color: accentGreen,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: backgroundColor,
+          width: 2,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w900,
+          height: 1,
         ),
       ),
     );
