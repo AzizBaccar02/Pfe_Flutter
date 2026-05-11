@@ -1,3 +1,5 @@
+//lib/screens/offers/agent/agent_main_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
@@ -5,6 +7,10 @@ import 'package:hugeicons/hugeicons.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../conf/user_profile_provider.dart';
 import '../../../services/profile_service.dart';
+import '../../chats/chats_screen.dart';
+import '../../chats/widgets/chat_notification_listener.dart';
+import '../../notifications/notifications_screen.dart';
+import '../../notifications/widgets/app_notification_listener.dart';
 import '../widgets/agent_bottom_bar.dart';
 import '../widgets/agent_offers_drawer.dart';
 import '../widgets/offers_app_bar.dart';
@@ -32,8 +38,9 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
   final ScrollController _homeScrollController = ScrollController();
 
   int _selectedIndex = 0;
+  int _unreadChatCount = 0;
+  int _unreadNotificationCount = 0;
 
-  // 0 = fully visible, 1 = fully hidden
   double _appBarHideProgress = 0;
 
   @override
@@ -65,6 +72,7 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
   Future<void> _hydrateProfileImage() async {
     try {
       final profile = await ProfileService.getAgentProfile();
+
       if (!mounted) return;
 
       final provider = context.read<UserProfileProvider>();
@@ -79,6 +87,36 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
         provider.clearProfileImage();
       }
     } catch (_) {}
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotificationsScreen(
+          onNotificationsRead: () {
+            if (!mounted) return;
+
+            setState(() {
+              _unreadNotificationCount = 0;
+            });
+          },
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _unreadNotificationCount = 0;
+    });
+  }
+
+  void _changeTab(int index) {
+    setState(() {
+      _selectedIndex = index;
+      _appBarHideProgress = 0;
+    });
   }
 
   @override
@@ -106,9 +144,9 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
     final screens = [
       AgentHomeScreen(
         scrollController: _homeScrollController,
-        onBrowseOffersTap: () => setState(() => _selectedIndex = 1),
-        onReactionsTap: () => setState(() => _selectedIndex = 2),
-        onChatsTap: () => setState(() => _selectedIndex = 3),
+        onBrowseOffersTap: () => _changeTab(1),
+        onReactionsTap: () => _changeTab(2),
+        onChatsTap: () => _changeTab(3),
       ),
       const AgentOffersScreen(),
       const _AgentSectionPlaceholder(
@@ -117,12 +155,7 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
             'Proposal status, pending reactions, and accepted responses will appear here next.',
         icon: HugeIcons.strokeRoundedFavourite,
       ),
-      const _AgentSectionPlaceholder(
-        title: 'Chats',
-        subtitle:
-            'Shared chat conversations will be connected here after the reaction flow is completed.',
-        icon: HugeIcons.strokeRoundedMessage02,
-      ),
+      const ChatsScreen(),
     ];
 
     return Scaffold(
@@ -145,17 +178,11 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
                   offset: Offset(0, -20 * _appBarHideProgress),
                   child: OffersAppBar(
                     isDarkMode: isDarkMode,
+                    notificationUnreadCount: _unreadNotificationCount,
                     onProfileTap: () {
                       _scaffoldKey.currentState?.openDrawer();
                     },
-                    onNotificationTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Notifications integration comes next.'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
+                    onNotificationTap: _openNotifications,
                   ),
                 ),
               ),
@@ -163,16 +190,43 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
           ),
         ),
       ),
-      body: screens[_selectedIndex],
+      body: AppNotificationListener(
+        onUnreadCountChanged: (count) {
+          if (!mounted || _unreadNotificationCount == count) return;
+
+          setState(() {
+            _unreadNotificationCount = count;
+          });
+        },
+        onOpenNotifications: _openNotifications,
+        child: ChatNotificationListener(
+          isChatsTabActive: _selectedIndex == 3,
+          onUnreadCountChanged: (count) {
+            if (!mounted || _unreadChatCount == count) return;
+
+            setState(() {
+              _unreadChatCount = count;
+            });
+          },
+          onChatOpened: () async {
+            if (!mounted) return;
+
+            setState(() {
+              _selectedIndex = 3;
+              _appBarHideProgress = 0;
+            });
+          },
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: screens,
+          ),
+        ),
+      ),
       bottomNavigationBar: AgentBottomBar(
         selectedIndex: _selectedIndex,
         isDarkMode: isDarkMode,
-        onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-            _appBarHideProgress = 0;
-          });
-        },
+        chatUnreadCount: _unreadChatCount,
+        onTap: _changeTab,
       ),
     );
   }

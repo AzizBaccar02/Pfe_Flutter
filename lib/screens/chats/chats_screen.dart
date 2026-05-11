@@ -1,21 +1,24 @@
+// lib/screens/chats/chats_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../../conf/theme_provider.dart';
-import '../../data/mock_chat_data.dart';
-import '../../models/interested_agent_model.dart';
+import '../../models/chat_conversation_summary_model.dart';
+import '../../services/auth_service.dart';
+import '../../services/chat_service.dart';
 import 'chat_conversation_screen.dart';
 import 'widgets/chat_match_avatar.dart';
 import 'widgets/chat_tile.dart';
 
 class ChatsScreen extends StatefulWidget {
-  final List<InterestedAgentModel> matchedAgents;
+  final List<dynamic>? matchedAgents;
   final VoidCallback? onChatStateChanged;
 
   const ChatsScreen({
     super.key,
-    required this.matchedAgents,
+    this.matchedAgents,
     this.onChatStateChanged,
   });
 
@@ -23,17 +26,149 @@ class ChatsScreen extends StatefulWidget {
   State<ChatsScreen> createState() => _ChatsScreenState();
 }
 
-class _ChatsScreenState extends State<ChatsScreen> {
-  Future<void> _openConversation(InterestedAgentModel agent) async {
+class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
+  bool _isLoading = true;
+  bool _isRefreshingSilently = false;
+  String? _errorMessage;
+
+  int _currentUserId = 0;
+  List<ChatConversationSummaryModel> _chats = [];
+
+  int get _totalUnreadCount => _sumUnread(_chats);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _bootstrapChats();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshChatsSilently();
+    }
+  }
+
+  Future<void> _bootstrapChats() async {
+    final storedUserId = await AuthService.getStoredUserId();
+
+    if (!mounted) return;
+
+    setState(() {
+      _currentUserId = storedUserId ?? 0;
+    });
+
+    await _loadChats();
+  }
+
+  Future<void> _loadChats({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
+
+    try {
+      final response = await ChatService.getCurrentUserChats();
+
+      if (!mounted) return;
+
+      setState(() {
+        _chats = _sortChats(response.chats);
+        _errorMessage = null;
+      });
+    } on ChatServiceException catch (e) {
+      if (!mounted) return;
+
+      if (showLoading) {
+        setState(() {
+          _errorMessage = e.message;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+
+      if (showLoading) {
+        setState(() {
+          _errorMessage = 'Unable to load chats. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted && showLoading) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshChatsSilently() async {
+    if (_isLoading || _isRefreshingSilently) return;
+
+    _isRefreshingSilently = true;
+
+    try {
+      final previousUnreadCount = _totalUnreadCount;
+      final response = await ChatService.getCurrentUserChats();
+
+      if (!mounted) return;
+
+      final sortedChats = _sortChats(response.chats);
+      final nextUnreadCount = _sumUnread(sortedChats);
+
+      setState(() {
+        _chats = sortedChats;
+        _errorMessage = null;
+      });
+
+      if (previousUnreadCount != nextUnreadCount) {
+        widget.onChatStateChanged?.call();
+      }
+    } catch (_) {
+      // Silent refresh should never disturb the UI.
+    } finally {
+      _isRefreshingSilently = false;
+    }
+  }
+
+  List<ChatConversationSummaryModel> _sortChats(
+    List<ChatConversationSummaryModel> chats,
+  ) {
+    final sortedChats = [...chats];
+
+    sortedChats.sort((a, b) {
+      final aDate = a.lastActivityDate;
+      final bDate = b.lastActivityDate;
+
+      if (aDate == null && bDate == null) return 0;
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
+
+      return bDate.compareTo(aDate);
+    });
+
+    return sortedChats;
+  }
+
+  Future<void> _openConversation(ChatConversationSummaryModel chat) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatConversationScreen(agent: agent),
+        builder: (_) => ChatConversationScreen(chat: chat),
       ),
     );
 
     if (!mounted) return;
-    setState(() {});
+
+    await _loadChats(showLoading: false);
     widget.onChatStateChanged?.call();
   }
 
@@ -41,169 +176,117 @@ class _ChatsScreenState extends State<ChatsScreen> {
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    const accentYellow = Color(0xFFFFC107);
+    const accentGreen = Color(0xFF22C55E);
 
-    final backgroundColor = isDarkMode ? Colors.black : Colors.white;
+    final backgroundColor =
+        isDarkMode ? const Color(0xFF0B0F14) : const Color(0xFFF3F4F6);
+
     final cardColor =
-        isDarkMode ? const Color(0xFF151515) : const Color(0xFFF6F6F6);
+        isDarkMode ? const Color(0xFF111827) : Colors.white;
+
     final softColor =
-        isDarkMode ? const Color(0xFF232323) : const Color(0xFFEDEDED);
-    final dividerColor = isDarkMode
-        ? Colors.white.withOpacity(0.06)
-        : Colors.black.withOpacity(0.06);
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
+        isDarkMode ? const Color(0xFF1F2937) : const Color(0xFFE5E7EB);
+
+    final primaryTextColor =
+        isDarkMode ? Colors.white : const Color(0xFF111827);
+
     final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.68)
-        : Colors.black.withOpacity(0.62);
-
-    final neutralAccentText = isDarkMode
-        ? Colors.white.withOpacity(0.82)
-        : Colors.black.withOpacity(0.82);
-
-    final sortedAgents = [...widget.matchedAgents]
-      ..sort((a, b) {
-        final aDate = MockChatData.getLastMessageForAgent(a.id)?.sentAt;
-        final bDate = MockChatData.getLastMessageForAgent(b.id)?.sentAt;
-
-        if (aDate == null && bDate == null) return 0;
-        if (aDate == null) return 1;
-        if (bDate == null) return -1;
-        return bDate.compareTo(aDate);
-      });
+        ? Colors.white.withOpacity(0.62)
+        : Colors.black.withOpacity(0.56);
 
     return Container(
       color: backgroundColor,
-      child: widget.matchedAgents.isEmpty
-          ? _EmptyChatsState(
-              cardColor: cardColor,
-              softColor: softColor,
-              primaryTextColor: primaryTextColor,
-              secondaryTextColor: secondaryTextColor,
+      child: _isLoading
+          ? Center(
+              child: CircularProgressIndicator(
+                color: accentGreen,
+                strokeWidth: 2.4,
+              ),
             )
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
-              children: [
-                Text(
-                  'Chats',
-                  style: TextStyle(
-                    color: primaryTextColor,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.6,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Your matches and active conversations in one place.',
-                  style: TextStyle(
-                    color: secondaryTextColor,
-                    fontSize: 14,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Text(
-                      'New Matches',
-                      style: TextStyle(
-                        color: neutralAccentText,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accentYellow.withOpacity(isDarkMode ? 0.14 : 0.18),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: accentYellow.withOpacity(isDarkMode ? 0.22 : 0.28),
-                        ),
-                      ),
-                      child: Text(
-                        '${widget.matchedAgents.length}',
-                        style: TextStyle(
-                          color: neutralAccentText,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: 108,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: widget.matchedAgents.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 14),
-                    itemBuilder: (context, index) {
-                      final agent = widget.matchedAgents[index];
-                      final unreadCount =
-                          MockChatData.getUnreadCountForAgent(agent.id);
+          : _errorMessage != null
+              ? _ChatsErrorState(
+                  message: _errorMessage!,
+                  cardColor: cardColor,
+                  primaryTextColor: primaryTextColor,
+                  secondaryTextColor: secondaryTextColor,
+                  onRetry: () => _loadChats(),
+                )
+              : _chats.isEmpty
+                  ? _EmptyChatsState(
+                      cardColor: cardColor,
+                      softColor: softColor,
+                      primaryTextColor: primaryTextColor,
+                      secondaryTextColor: secondaryTextColor,
+                    )
+                  : RefreshIndicator(
+                      color: accentGreen,
+                      onRefresh: () => _loadChats(showLoading: false),
+                      child: ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 18, 20, 120),
+                        children: [
+                          _ChatsHeader(
+                            totalChats: _chats.length,
+                            unreadCount: _totalUnreadCount,
+                            isDarkMode: isDarkMode,
+                            primaryTextColor: primaryTextColor,
+                            secondaryTextColor: secondaryTextColor,
+                          ),
+                          const SizedBox(height: 24),
+                          _SectionTitle(
+                            title: 'Active Offers',
+                            count: _chats.length,
+                            primaryTextColor: primaryTextColor,
+                            secondaryTextColor: secondaryTextColor,
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 122,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _chats.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 14),
+                              itemBuilder: (context, index) {
+                                final chat = _chats[index];
 
-                      return ChatMatchAvatar(
-                        agent: agent,
-                        primaryTextColor: primaryTextColor,
-                        hasUnread: unreadCount > 0,
-                        onTap: () => _openConversation(agent),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 26),
-                Row(
-                  children: [
-                    Text(
-                      'Messages',
-                      style: TextStyle(
-                        color: primaryTextColor,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
+                                return ChatMatchAvatar(
+                                  chat: chat,
+                                  primaryTextColor: primaryTextColor,
+                                  hasUnread: chat.unreadCount > 0,
+                                  onTap: () => _openConversation(chat),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          _SectionTitle(
+                            title: 'Messages',
+                            count: _chats.length,
+                            primaryTextColor: primaryTextColor,
+                            secondaryTextColor: secondaryTextColor,
+                          ),
+                          const SizedBox(height: 12),
+                          ..._chats.map((chat) {
+                            return ChatTile(
+                              chat: chat,
+                              currentUserId: _currentUserId,
+                              trailingText:
+                                  _formatTrailingTime(chat.lastActivityDate),
+                              primaryTextColor: primaryTextColor,
+                              secondaryTextColor: secondaryTextColor,
+                              onTap: () => _openConversation(chat),
+                            );
+                          }),
+                        ],
                       ),
                     ),
-                    const Spacer(),
-                    Text(
-                      '${sortedAgents.length} conversations',
-                      style: TextStyle(
-                        color: secondaryTextColor,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                ...sortedAgents.map((agent) {
-                  final lastMessage =
-                      MockChatData.getLastMessageForAgent(agent.id);
-                  final unreadCount =
-                      MockChatData.getUnreadCountForAgent(agent.id);
+    );
+  }
 
-                  final previewText = lastMessage?.text ??
-                      'You matched with ${agent.name.split(' ').first}. Start the conversation now.';
-                  final trailingText = _formatTrailingTime(lastMessage?.sentAt);
-
-                  return ChatTile(
-                    agent: agent,
-                    previewText: previewText,
-                    trailingText: trailingText,
-                    offerTitle: agent.offerTitle,
-                    unreadCount: unreadCount,
-                    dividerColor: dividerColor,
-                    primaryTextColor: primaryTextColor,
-                    secondaryTextColor: secondaryTextColor,
-                    onTap: () => _openConversation(agent),
-                  );
-                }),
-              ],
-            ),
+  static int _sumUnread(List<ChatConversationSummaryModel> chats) {
+    return chats.fold<int>(
+      0,
+      (total, chat) => total + chat.unreadCount,
     );
   }
 
@@ -222,6 +305,262 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 }
 
+class _ChatsHeader extends StatelessWidget {
+  final int totalChats;
+  final int unreadCount;
+  final bool isDarkMode;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+
+  const _ChatsHeader({
+    required this.totalChats,
+    required this.unreadCount,
+    required this.isDarkMode,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accentGreen = Color(0xFF22C55E);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF111827) : Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withOpacity(0.06)
+              : Colors.black.withOpacity(0.04),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDarkMode ? 0.18 : 0.05),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: accentGreen.withOpacity(isDarkMode ? 0.14 : 0.10),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Center(
+              child: HugeIcon(
+                icon: HugeIcons.strokeRoundedMessage02,
+                color: accentGreen,
+                size: 25,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Chats',
+                  style: TextStyle(
+                    color: primaryTextColor,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.7,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  unreadCount > 0
+                      ? '$unreadCount unread message${unreadCount == 1 ? '' : 's'} waiting'
+                      : '$totalChats active conversation${totalChats == 1 ? '' : 's'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: secondaryTextColor,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (unreadCount > 0)
+            Container(
+              constraints: const BoxConstraints(
+                minWidth: 32,
+                minHeight: 32,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: const BoxDecoration(
+                color: accentGreen,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                unreadCount > 99 ? '99+' : '$unreadCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  final int count;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+
+  const _SectionTitle({
+    required this.title,
+    required this.count,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accentGreen = Color(0xFF22C55E);
+
+    return Row(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: primaryTextColor,
+            fontSize: 19,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: accentGreen.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: accentGreen.withOpacity(0.20),
+            ),
+          ),
+          child: Text(
+            '$count',
+            style: TextStyle(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.white.withOpacity(0.82)
+                  : const Color(0xFF166534),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        const Spacer(),
+        Text(
+          title == 'Messages' ? 'Latest first' : 'By offer',
+          style: TextStyle(
+            color: secondaryTextColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChatsErrorState extends StatelessWidget {
+  final String message;
+  final Color cardColor;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+  final Future<void> Function() onRetry;
+
+  const _ChatsErrorState({
+    required this.message,
+    required this.cardColor,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const accentGreen = Color(0xFF22C55E);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(26),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const HugeIcon(
+                icon: HugeIcons.strokeRoundedAlert02,
+                color: Colors.redAccent,
+                size: 34,
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Could not load chats',
+                style: TextStyle(
+                  color: primaryTextColor,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: secondaryTextColor,
+                  fontSize: 14,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: onRetry,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: accentGreen,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text(
+                  'Try again',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptyChatsState extends StatelessWidget {
   final Color cardColor;
   final Color softColor;
@@ -237,11 +576,7 @@ class _EmptyChatsState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-
-    final neutralIconColor = Theme.of(context).brightness == Brightness.dark
-        ? Colors.white.withOpacity(0.78)
-        : Colors.black.withOpacity(0.78);
+    const accentGreen = Color(0xFF22C55E);
 
     return Center(
       child: Padding(
@@ -260,13 +595,13 @@ class _EmptyChatsState extends StatelessWidget {
                 width: 74,
                 height: 74,
                 decoration: BoxDecoration(
-                  color: accentYellow.withOpacity(0.10),
+                  color: accentGreen.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(24),
                 ),
-                child: Center(
+                child: const Center(
                   child: HugeIcon(
                     icon: HugeIcons.strokeRoundedMessage02,
-                    color: neutralIconColor,
+                    color: accentGreen,
                     size: 28,
                   ),
                 ),
@@ -277,12 +612,12 @@ class _EmptyChatsState extends StatelessWidget {
                 style: TextStyle(
                   color: primaryTextColor,
                   fontSize: 22,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 10),
               Text(
-                'When you accept an interested agent, your match will appear here and the conversation can begin.',
+                'When a client accepts an interested agent, the conversation will appear here.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: secondaryTextColor,
