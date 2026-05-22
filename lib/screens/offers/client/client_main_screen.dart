@@ -15,6 +15,8 @@ import '../../chats/chats_screen.dart';
 import '../../chats/widgets/chat_notification_listener.dart';
 import '../../notifications/notifications_screen.dart';
 import '../../notifications/widgets/app_notification_listener.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/notification_realtime_hub.dart';
 import 'client_home_screen.dart';
 import 'interested_agents_screen.dart';
 import 'create_offer_screen.dart';
@@ -60,9 +62,32 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncClientAccountUserId();
       _hydrateProfileImage();
       _syncUnreadChatCount();
+      _bootstrapNotifications();
     });
+  }
+
+  Future<void> _syncClientAccountUserId() async {
+    final userId = await AuthService.getStoredUserId();
+
+    if (userId != null && userId > 0) {
+      MockClientData.clientAccountUserId = userId;
+    }
+  }
+
+  Future<void> _bootstrapNotifications() async {
+    final hub = NotificationRealtimeHub.instance;
+    await hub.ensureStarted();
+
+    if (!mounted) return;
+
+    if (_unreadNotificationCount != hub.unreadCount) {
+      setState(() {
+        _unreadNotificationCount = hub.unreadCount;
+      });
+    }
   }
 
   Future<void> _syncUnreadChatCount() async {
@@ -73,9 +98,11 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     try {
       final response = await ChatService.getCurrentUserChats();
 
+      final userId = await AuthService.getStoredUserId() ?? 0;
+
       final unreadCount = response.chats.fold<int>(
         0,
-        (total, chat) => total + chat.unreadCount,
+        (total, chat) => total + chat.effectiveUnreadCountForViewer(userId),
       );
 
       if (!mounted) return;
@@ -113,7 +140,16 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
   }
 
   Future<void> _openNotifications() async {
-    await Navigator.push(
+    final hub = NotificationRealtimeHub.instance;
+    await hub.syncUnreadCount();
+
+    if (mounted && _unreadNotificationCount != hub.unreadCount) {
+      setState(() {
+        _unreadNotificationCount = hub.unreadCount;
+      });
+    }
+
+    final result = await Navigator.push<Object?>(
       context,
       MaterialPageRoute(
         builder: (_) => NotificationsScreen(
@@ -124,6 +160,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
               _unreadNotificationCount = 0;
             });
           },
+          onAgentAccepted: _handleMatchedAgent,
         ),
       ),
     );
@@ -133,6 +170,10 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     setState(() {
       _unreadNotificationCount = 0;
     });
+
+    if (result is InterestedAgentModel) {
+      _handleMatchedAgent(result);
+    }
   }
 
   void _changeTab(int index) {
@@ -228,6 +269,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       ChatsScreen(
         matchedAgents: _matchedAgents,
         onChatStateChanged: _syncUnreadChatCount,
+        isTabActive: _selectedIndex == 4,
       ),
     ];
 
@@ -254,6 +296,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
           });
         },
         onOpenNotifications: _openNotifications,
+        onAgentAccepted: _handleMatchedAgent,
         child: ChatNotificationListener(
           isChatsTabActive: _selectedIndex == 4,
           onUnreadCountChanged: (count) {

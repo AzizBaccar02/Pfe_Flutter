@@ -5,6 +5,9 @@ import 'package:provider/provider.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../data/mock_client_data.dart';
 import '../../../models/interested_agent_model.dart';
+import '../../../models/offer_interaction_model.dart';
+import '../../../services/interaction_service.dart';
+import '../../../services/offer_reaction_service.dart';
 import '../widgets/match_created_dialog.dart';
 import '../widgets/swipe_action_buttons.dart';
 import '../widgets/swipe_deck.dart';
@@ -87,12 +90,66 @@ class _InterestedAgentsScreenState extends State<InterestedAgentsScreen> {
     );
   }
 
-  void _handleSwipe(InterestedAgentModel agent, bool liked) {
+  Future<void> _handleSwipe(InterestedAgentModel agent, bool liked) async {
     widget.onProcessed?.call(agent);
 
-    if (liked) {
-      widget.onMatched?.call(agent);
-      _showMatchDialog(agent);
+    try {
+      if (liked) {
+        final pending = await InteractionService.getPendingForOffer(
+          agent.offerId,
+        );
+        final interaction = pending.firstWhere(
+          (item) => item.agentId == agent.id,
+          orElse: () => OfferInteractionModel(
+            id: 0,
+            offerId: agent.offerId,
+            offerTitle: agent.offerTitle,
+            agentId: agent.id,
+            message: '',
+            status: 'PENDING',
+            react: true,
+          ),
+        );
+
+        if (interaction.id > 0) {
+          await OfferReactionService.clientAcceptAgent(
+            interaction: interaction,
+          );
+        }
+
+        if (!mounted) return;
+
+        widget.onMatched?.call(agent);
+        _showMatchDialog(agent);
+        return;
+      }
+
+      final pendingReject = await InteractionService.getPendingForOffer(
+        agent.offerId,
+      );
+      OfferInteractionModel? rejectInteraction;
+      try {
+        rejectInteraction = pendingReject.firstWhere(
+          (item) => item.agentId == agent.id,
+        );
+      } catch (_) {
+        rejectInteraction = null;
+      }
+
+      if (rejectInteraction != null && rejectInteraction.id > 0) {
+        await OfferReactionService.clientRejectAgent(
+          interaction: rejectInteraction,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to send your response right now.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 

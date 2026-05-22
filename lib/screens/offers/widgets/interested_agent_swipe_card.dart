@@ -38,7 +38,7 @@ class InterestedAgentSwipeCard extends StatelessWidget {
           Image.asset(
             agent.imageUrl,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) {
+            errorBuilder: (_, _, _) {
               return Container(
                 color: isDarkMode
                     ? const Color(0xFF1C1C1C)
@@ -166,7 +166,7 @@ class InterestedAgentPreviewCard extends StatelessWidget {
             Image.asset(
               agent.imageUrl,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) {
+              errorBuilder: (_, _, _) {
                 return Container(
                   color: isDarkMode
                       ? const Color(0xFF1C1C1C)

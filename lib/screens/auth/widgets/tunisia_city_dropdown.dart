@@ -47,7 +47,7 @@ class TunisiaCityDropdown extends StatelessWidget {
         : Colors.black.withOpacity(0.5);
 
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       dropdownColor: isDarkMode ? const Color(0xFF1A1A1A) : Colors.white,
       iconEnabledColor: textColor,
       style: TextStyle(color: textColor),

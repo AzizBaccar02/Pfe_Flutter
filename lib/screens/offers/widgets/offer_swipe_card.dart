@@ -3,6 +3,7 @@ import 'package:hugeicons/hugeicons.dart';
 
 class SwipeOfferCardData {
   final int id;
+  final int clientUserId;
   final String title;
   final String category;
   final String city;
@@ -15,6 +16,7 @@ class SwipeOfferCardData {
 
   const SwipeOfferCardData({
     required this.id,
+    required this.clientUserId,
     required this.title,
     required this.category,
     required this.city,
@@ -129,7 +131,7 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
         width: double.infinity,
         height: double.infinity,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) {
+        errorBuilder: (_, _, _) {
           return Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -151,7 +153,7 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
       width: double.infinity,
       height: double.infinity,
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) {
+      errorBuilder: (_, _, _) {
         return Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(

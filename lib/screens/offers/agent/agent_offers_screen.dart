@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../conf/theme_provider.dart';
+import '../../../models/offer_interaction_model.dart';
+import '../../../services/interaction_service.dart';
+import '../../../services/offer_reaction_service.dart';
+import '../../../services/offer_service.dart';
 import '../widgets/offer_swipe_card.dart';
 
 class AgentOffersScreen extends StatefulWidget {
@@ -12,9 +16,15 @@ class AgentOffersScreen extends StatefulWidget {
 }
 
 class _AgentOffersScreenState extends State<AgentOffersScreen> {
-  final List<SwipeOfferCardData> _offers = [
-    const SwipeOfferCardData(
+  List<SwipeOfferCardData> _offers = [];
+  bool _isLoading = true;
+  String? _loadError;
+
+  // Fallback removed after API load — kept empty until _loadOffers runs.
+  final List<SwipeOfferCardData> _fallbackOffers = [
+    SwipeOfferCardData(
       id: 1,
+      clientUserId: 0,
       title: 'Flutter marketplace app polish',
       category: 'Mobile Development',
       city: 'Tunis',
@@ -45,8 +55,9 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
       skills: ['Flutter', 'UI polish', 'API integration'],
       highlights: ['Responsive UI', 'Clean structure', 'Premium finish'],
     ),
-    const SwipeOfferCardData(
+    SwipeOfferCardData(
       id: 2,
+      clientUserId: 0,
       title: 'Restaurant booking mobile app UI',
       category: 'UI / UX',
       city: 'Sousse',
@@ -61,8 +72,9 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
       skills: ['UI Design', 'Mobile UX', 'Booking flow'],
       highlights: ['User journey', 'Modern visuals', 'Clear hierarchy'],
     ),
-    const SwipeOfferCardData(
+    SwipeOfferCardData(
       id: 3,
+      clientUserId: 0,
       title: 'Delivery app frontend integration',
       category: 'Frontend Integration',
       city: 'Ariana',
@@ -82,7 +94,59 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
 
   Offset _dragOffset = Offset.zero;
 
-  bool get _isEmpty => _offers.isEmpty;
+  bool get _isEmpty => !_isLoading && _offers.isEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOffers();
+  }
+
+  Future<void> _loadOffers() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
+    try {
+      final remote = await OfferService.getBrowseOffers();
+      if (!mounted) return;
+
+      setState(() {
+        _offers = remote.isNotEmpty
+            ? remote.map(_mapBrowseOffer).toList()
+            : List<SwipeOfferCardData>.from(_fallbackOffers);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _offers = List<SwipeOfferCardData>.from(_fallbackOffers);
+        _loadError = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  SwipeOfferCardData _mapBrowseOffer(BrowseOfferModel offer) {
+    return SwipeOfferCardData(
+      id: offer.id,
+      clientUserId: offer.clientUserId,
+      title: offer.title,
+      category: offer.category,
+      city: offer.city,
+      budget: offer.budgetLabel,
+      clientName: offer.clientName,
+      description: offer.description,
+      imageUrls: offer.imageUrls
+          .map(OfferService.resolveImageUrl)
+          .where((url) => url.isNotEmpty)
+          .toList(),
+      skills: const ['Service', 'Professional'],
+      highlights: const ['Open offer', 'Client verified'],
+    );
+  }
 
   void _onPanUpdate(DragUpdateDetails details) {
     setState(() {
@@ -108,7 +172,7 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
     });
   }
 
-  void _commitSwipe({required bool isLike}) {
+  Future<void> _commitSwipe({required bool isLike}) async {
     if (_offers.isEmpty) return;
 
     final offer = _offers.first;
@@ -118,11 +182,44 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
       _dragOffset = Offset.zero;
     });
 
+    if (isLike) {
+      try {
+        final price = double.tryParse(
+          offer.budget.replaceAll(RegExp(r'[^0-9.]'), ''),
+        );
+
+        await OfferReactionService.recordAgentLikeOffer(
+          offerId: offer.id,
+          proposedPrice: price,
+        );
+      } on InteractionServiceException catch (e) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           isLike
-              ? 'You reacted to "${offer.title}"'
+              ? 'Interest sent for "${offer.title}"'
               : 'You skipped "${offer.title}"',
         ),
         behavior: SnackBarBehavior.floating,
@@ -428,7 +525,15 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
         top: false,
         bottom: false,
         child: SizedBox.expand(
-          child: _isEmpty ? _buildEmptyState(isDarkMode) : _buildDeck(isDarkMode),
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF22C55E),
+                  ),
+                )
+              : _isEmpty
+                  ? _buildEmptyState(isDarkMode)
+                  : _buildDeck(isDarkMode),
         ),
       ),
     );

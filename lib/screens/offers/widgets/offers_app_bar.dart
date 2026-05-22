@@ -50,7 +50,7 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
       return Image.network(
         remoteUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _emptyAvatar(),
+        errorBuilder: (_, _, _) => _emptyAvatar(),
       );
     }
 

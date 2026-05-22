@@ -11,6 +11,7 @@ import '../../chats/chats_screen.dart';
 import '../../chats/widgets/chat_notification_listener.dart';
 import '../../notifications/notifications_screen.dart';
 import '../../notifications/widgets/app_notification_listener.dart';
+import '../../../services/notification_realtime_hub.dart';
 import '../widgets/agent_bottom_bar.dart';
 import '../widgets/agent_offers_drawer.dart';
 import '../widgets/offers_app_bar.dart';
@@ -51,6 +52,7 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _hydrateProfileImage();
+      _bootstrapNotifications();
     });
   }
 
@@ -65,6 +67,19 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
     if ((nextProgress - _appBarHideProgress).abs() > 0.01) {
       setState(() {
         _appBarHideProgress = nextProgress;
+      });
+    }
+  }
+
+  Future<void> _bootstrapNotifications() async {
+    final hub = NotificationRealtimeHub.instance;
+    await hub.ensureStarted();
+
+    if (!mounted) return;
+
+    if (_unreadNotificationCount != hub.unreadCount) {
+      setState(() {
+        _unreadNotificationCount = hub.unreadCount;
       });
     }
   }
@@ -90,6 +105,15 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
   }
 
   Future<void> _openNotifications() async {
+    final hub = NotificationRealtimeHub.instance;
+    await hub.syncUnreadCount();
+
+    if (mounted && _unreadNotificationCount != hub.unreadCount) {
+      setState(() {
+        _unreadNotificationCount = hub.unreadCount;
+      });
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -155,7 +179,9 @@ class _AgentMainScreenState extends State<AgentMainScreen> {
             'Proposal status, pending reactions, and accepted responses will appear here next.',
         icon: HugeIcons.strokeRoundedFavourite,
       ),
-      const ChatsScreen(),
+      ChatsScreen(
+        isTabActive: _selectedIndex == 3,
+      ),
     ];
 
     return Scaffold(

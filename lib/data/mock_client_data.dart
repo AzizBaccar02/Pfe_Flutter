@@ -2,6 +2,9 @@ import '../models/client_offer_model.dart';
 import '../models/interested_agent_model.dart';
 
 class MockClientData {
+  /// Set on client login so agent likes notify the correct Django user.
+  static int clientAccountUserId = 1;
+
   static bool isProfileCompleted = true;
 
   static String clientName = 'Aziz Baccar';

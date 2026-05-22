@@ -32,4 +32,24 @@ class ClientOfferModel {
     required this.createdAt,
     required this.interestedAgentsCount,
   });
+
+  ClientOfferModel copyWith({
+    int? interestedAgentsCount,
+  }) {
+    return ClientOfferModel(
+      id: id,
+      title: title,
+      description: description,
+      budget: budget,
+      category: category,
+      city: city,
+      address: address,
+      postalCode: postalCode,
+      status: status,
+      images: images,
+      createdAt: createdAt,
+      interestedAgentsCount:
+          interestedAgentsCount ?? this.interestedAgentsCount,
+    );
+  }
 }
