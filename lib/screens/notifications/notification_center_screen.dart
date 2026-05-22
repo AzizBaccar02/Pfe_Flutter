@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
+import '../../conf/app_colors.dart';
 import '../../conf/theme_provider.dart';
 import '../../data/mock_notification_data.dart';
 import 'widgets/notification_empty_state.dart';
@@ -27,7 +28,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
     final items = MockNotificationData.all;
 
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
@@ -103,7 +104,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           width: 50,
                           height: 50,
                           decoration: BoxDecoration(
-                            color: accentYellow.withOpacity(
+                            color: accent.withOpacity(
                               isDarkMode ? 0.10 : 0.14,
                             ),
                             borderRadius: BorderRadius.circular(16),

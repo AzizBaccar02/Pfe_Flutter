@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_colors.dart';
+
 class ProfileHeaderCard extends StatelessWidget {
   final bool isDarkMode;
   final String title;
@@ -17,8 +19,8 @@ class ProfileHeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowDeep = Color(0xFF5D4200);
+    const accent = AppColors.accent;
+    const accentDeep = AppColors.accentDeep;
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -50,7 +52,7 @@ class ProfileHeaderCard extends StatelessWidget {
                 ],
               ),
         border: Border.all(
-          color: accentYellow.withOpacity(isDarkMode ? 0.14 : 0.18),
+          color: accent.withOpacity(isDarkMode ? 0.14 : 0.18),
         ),
       ),
       child: Row(
@@ -60,12 +62,12 @@ class ProfileHeaderCard extends StatelessWidget {
             width: 50,
             decoration: BoxDecoration(
               color: isDarkMode
-                  ? accentYellow.withOpacity(0.14)
-                  : accentYellow.withOpacity(0.18),
+                  ? accent.withOpacity(0.14)
+                  : accent.withOpacity(0.18),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: accentYellow.withOpacity(0.14),
+                  color: accent.withOpacity(0.14),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -74,7 +76,7 @@ class ProfileHeaderCard extends StatelessWidget {
             child: Center(
               child: HugeIcon(
                 icon: icon,
-                color: accentYellowDeep,
+                color: accentDeep,
                 size: 20,
               ),
             ),

@@ -1,6 +1,7 @@
 class AgentProfileModel {
   final String firstName;
   final String lastName;
+  final String email;
   final String phone;
   final String photoUrl;
   final String bio;
@@ -14,6 +15,7 @@ class AgentProfileModel {
   const AgentProfileModel({
     required this.firstName,
     required this.lastName,
+    required this.email,
     required this.phone,
     required this.photoUrl,
     required this.bio,
@@ -24,6 +26,17 @@ class AgentProfileModel {
     required this.postalCode,
     required this.isProfileCompleted,
   });
+
+  String get fullName {
+    final value = [
+      firstName.trim(),
+      lastName.trim(),
+    ].where((part) => part.isNotEmpty).join(' ');
+
+    if (value.isEmpty) return 'Agent';
+
+    return value;
+  }
 
   factory AgentProfileModel.fromApi({
     required Map<String, dynamic> meJson,
@@ -37,6 +50,7 @@ class AgentProfileModel {
     return AgentProfileModel(
       firstName: (meJson['first_name'] ?? '').toString(),
       lastName: (meJson['last_name'] ?? '').toString(),
+      email: (meJson['email'] ?? '').toString(),
       phone: (agentJson['phone'] ?? profile['phone'] ?? '').toString(),
       photoUrl: (agentJson['photo'] ?? profile['photo'] ?? '').toString(),
       bio: (agentJson['bio'] ?? profile['bio'] ?? '').toString(),

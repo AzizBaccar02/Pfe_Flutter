@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../conf/app_colors.dart';
+
 class PrimaryButton extends StatelessWidget {
   final String text;
   final VoidCallback onPressed;
@@ -18,15 +20,12 @@ class PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowSoft = Color(0xFFFFE082);
-    const accentYellowDeep = Color(0xFF5D4200);
-
     final outlineBorderColor = isDarkMode
-        ? accentYellow.withOpacity(0.55)
-        : accentYellow.withOpacity(0.80);
+        ? AppColors.accent.withValues(alpha: 0.55)
+        : AppColors.accent.withValues(alpha: 0.80);
 
-    final outlineTextColor = isDarkMode ? accentYellowSoft : accentYellowDeep;
+    final outlineTextColor =
+        isDarkMode ? AppColors.accentSoft : AppColors.accentDeep;
 
     if (isOutlined) {
       return SizedBox(
@@ -41,8 +40,8 @@ class PrimaryButton extends StatelessWidget {
               width: 1.4,
             ),
             backgroundColor: isDarkMode
-                ? accentYellow.withOpacity(0.05)
-                : accentYellow.withOpacity(0.08),
+                ? AppColors.accent.withValues(alpha: 0.05)
+                : AppColors.accent.withValues(alpha: 0.08),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -78,13 +77,13 @@ class PrimaryButton extends StatelessWidget {
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
             colors: [
-              accentYellowSoft,
-              accentYellow,
+              AppColors.accentSoft,
+              AppColors.accent,
             ],
           ),
           boxShadow: [
             BoxShadow(
-              color: accentYellow.withOpacity(0.28),
+              color: AppColors.accent.withValues(alpha: 0.28),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -109,14 +108,14 @@ class PrimaryButton extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 15.5,
                   fontWeight: FontWeight.w800,
-                  color: accentYellowDeep,
+                  color: AppColors.accentDeep,
                 ),
               ),
               if (icon != null) ...[
                 const SizedBox(width: 8),
                 IconTheme(
                   data: const IconThemeData(
-                    color: accentYellowDeep,
+                    color: AppColors.accentDeep,
                     size: 18,
                   ),
                   child: icon!,

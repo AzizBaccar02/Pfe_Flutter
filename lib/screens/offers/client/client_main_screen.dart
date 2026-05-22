@@ -15,11 +15,10 @@ import '../../chats/widgets/chat_notification_listener.dart';
 import '../../notifications/notifications_screen.dart';
 import '../../notifications/widgets/app_notification_listener.dart';
 import 'client_home_screen.dart';
-import 'interested_agents_screen.dart';
 import 'create_offer_screen.dart';
 import 'interested_agents_screen.dart';
 import 'my_offers_screen.dart';
-import '../widgets/offers_app_bar.dart';
+import '../widgets/offers_app_bar_layout.dart';
 import '../widgets/offers_bottom_bar.dart';
 import '../widgets/offers_drawer.dart';
 
@@ -41,10 +40,13 @@ class ClientMainScreen extends StatefulWidget {
 
 class _ClientMainScreenState extends State<ClientMainScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ScrollController _homeScrollController = ScrollController();
 
   int _selectedIndex = 0;
   int _unreadChatCount = 0;
   int _unreadNotificationCount = 0;
+  int _offersRefreshSeed = 0;
+  final OffersAppBarScrollBehavior _appBarScroll = OffersAppBarScrollBehavior();
 
   bool _isSyncingUnread = false;
 
@@ -59,6 +61,16 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       _hydrateProfileImage();
       _syncUnreadChatCount();
     });
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (_selectedIndex != 0) return false;
+
+    if (_appBarScroll.handle(notification)) {
+      setState(() {});
+    }
+
+    return false;
   }
 
   Future<void> _syncUnreadChatCount() async {
@@ -111,12 +123,8 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
   void _selectTab(int index) {
     setState(() {
       _selectedIndex = index;
-      _appBarHideProgress = 0;
+      _appBarScroll.reset();
     });
-  }
-
-  void _goToHome() {
-    _selectTab(0);
   }
 
   void _goToMyOffers() {
@@ -139,7 +147,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     setState(() {
       _offersRefreshSeed++;
       _selectedIndex = 1;
-      _appBarHideProgress = 0;
+      _appBarScroll.reset();
     });
   }
 
@@ -191,7 +199,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       setState(() {
         _matchedAgents.insert(0, agent);
         _selectedIndex = 4;
-        _appBarHideProgress = 0;
+        _appBarScroll.reset();
       });
 
       _syncUnreadChatCount();
@@ -233,15 +241,6 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     }
   }
 
-  void _openNotifications() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const NotificationCenterScreen(),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
@@ -249,25 +248,18 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
 
-    const baseAppBarHeight = kToolbarHeight;
-
-    final visibleHeight = _selectedIndex == 0
-        ? baseAppBarHeight * (1 - _appBarHideProgress)
-        : baseAppBarHeight;
-
-    final visibleOpacity = _selectedIndex == 0
-        ? (1 - _appBarHideProgress).clamp(0.0, 1.0)
-        : 1.0;
-
     final screens = [
       ClientHomeScreen(
+        scrollController: _homeScrollController,
         onCreateOfferTap: () => _changeTab(2),
         onMyOffersTap: () => _changeTab(1),
         onInterestedTap: () => _changeTab(3),
         onChatsTap: () => _changeTab(4),
       ),
+      MyOffersScreen(key: ValueKey(_offersRefreshSeed)),
       CreateOfferScreen(
         onBack: () => _changeTab(0),
+        onCreated: _handleOfferCreated,
       ),
       InterestedAgentsScreen(
         showBackButton: false,
@@ -291,44 +283,49 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
         onInterestedTap: _goToInterestedAgents,
         onChatsTap: _goToChats,
       ),
-      appBar: OffersAppBar(
+      appBar: CollapsibleOffersAppBar(
         isDarkMode: isDarkMode,
         notificationUnreadCount: _unreadNotificationCount,
+        hideProgress: _appBarScroll.hideProgress,
+        collapsible: _selectedIndex == 0,
         onProfileTap: () {
           _scaffoldKey.currentState?.openDrawer();
         },
         onNotificationTap: _openNotifications,
       ),
-      body: AppNotificationListener(
-        onUnreadCountChanged: (count) {
-          if (!mounted || _unreadNotificationCount == count) return;
-
-          setState(() {
-            _unreadNotificationCount = count;
-          });
-        },
-        onOpenNotifications: _openNotifications,
-        child: ChatNotificationListener(
-          isChatsTabActive: _selectedIndex == 4,
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _handleScrollNotification,
+        child: AppNotificationListener(
           onUnreadCountChanged: (count) {
-            if (!mounted || _unreadChatCount == count) return;
+            if (!mounted || _unreadNotificationCount == count) return;
 
             setState(() {
-              _unreadChatCount = count;
+              _unreadNotificationCount = count;
             });
           },
-          onChatOpened: () async {
-            if (!mounted) return;
+          onOpenNotifications: _openNotifications,
+          child: ChatNotificationListener(
+            isChatsTabActive: _selectedIndex == 4,
+            onUnreadCountChanged: (count) {
+              if (!mounted || _unreadChatCount == count) return;
 
-            setState(() {
-              _selectedIndex = 4;
-            });
+              setState(() {
+                _unreadChatCount = count;
+              });
+            },
+            onChatOpened: () async {
+              if (!mounted) return;
 
-            await _syncUnreadChatCount();
-          },
-          child: IndexedStack(
-            index: _selectedIndex,
-            children: screens,
+              setState(() {
+                _selectedIndex = 4;
+              });
+
+              await _syncUnreadChatCount();
+            },
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: screens,
+            ),
           ),
         ),
       ),
@@ -347,7 +344,6 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
 
   @override
   void dispose() {
-    _homeScrollController.removeListener(_handleHomeScroll);
     _homeScrollController.dispose();
     super.dispose();
   }
@@ -363,9 +359,10 @@ class ClientProfileCompletionScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.black : Colors.white,
-      appBar: OffersAppBar(
+      appBar: CollapsibleOffersAppBar(
         isDarkMode: isDarkMode,
         notificationUnreadCount: 0,
+        collapsible: false,
         onProfileTap: () {},
         onNotificationTap: () {},
       ),

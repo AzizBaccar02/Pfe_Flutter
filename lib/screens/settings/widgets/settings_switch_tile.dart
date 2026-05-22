@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../conf/app_colors.dart';
+
 class SettingsSwitchTile extends StatelessWidget {
   final bool isDarkMode;
   final String title;
@@ -106,20 +108,20 @@ class _PremiumToggle extends StatelessWidget {
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                   colors: [
-                    Color(0xFFFFE082),
-                    Color(0xFFFFC107),
+                    AppColors.accentSoft,
+                    AppColors.accent,
                   ],
                 )
               : null,
           color: value ? null : offTrackColor,
           border: Border.all(
-            color: value ? const Color(0xFFFFC107) : offBorderColor,
+            color: value ? AppColors.accent : offBorderColor,
             width: 1.2,
           ),
           boxShadow: value
               ? [
                   BoxShadow(
-                    color: const Color(0xFFFFC107).withOpacity(0.28),
+                    color: AppColors.accent.withValues(alpha: 0.28),
                     blurRadius: 14,
                     offset: const Offset(0, 6),
                   ),
@@ -138,7 +140,7 @@ class _PremiumToggle extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: value
-                  ? const Color(0xFF5D4200)
+                  ? Colors.white
                   : (isDarkMode
                       ? const Color(0xFF8F8F9B)
                       : const Color(0xFF91919C)),

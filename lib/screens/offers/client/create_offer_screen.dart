@@ -9,6 +9,7 @@ import '../../../conf/theme_provider.dart';
 import '../../../widgets/custom_text_field.dart';
 import '../../../widgets/primary_button.dart';
 import '../../../services/offer_service.dart';
+import '../../subscription/widgets/usage_limit_dialog.dart';
 
 class CreateOfferScreen extends StatefulWidget {
   final VoidCallback? onBack;
@@ -197,11 +198,19 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
     } on OfferException catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-        ),
-      );
+      if (UsageLimitDialog.isUsageLimitMessage(e.message)) {
+        await UsageLimitDialog.show(
+          context,
+          isAgent: false,
+          message: e.message,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+          ),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
 

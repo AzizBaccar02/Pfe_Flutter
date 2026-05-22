@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../conf/app_colors.dart';
+
 class CustomTextField extends StatelessWidget {
   final TextEditingController controller;
   final String? hintText;
@@ -40,8 +42,8 @@ class CustomTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowDeep = Color(0xFF5D4200);
+    const accent = AppColors.accent;
+    const accentDeep = AppColors.accentDeep;
 
     final resolvedHint = hintText ?? hint ?? '';
     final resolvedLabel = labelText ?? label;
@@ -53,7 +55,7 @@ class CustomTextField extends StatelessWidget {
         ? Colors.white.withOpacity(0.08)
         : Colors.black.withOpacity(0.08);
 
-    final focusedBorderColor = accentYellow.withOpacity(0.70);
+    final focusedBorderColor = accent.withValues(alpha: 0.70);
 
     final textColor = isDarkMode ? Colors.white : Colors.black;
     final hintColor = isDarkMode
@@ -133,7 +135,7 @@ class CustomTextField extends StatelessWidget {
             fontSize: 14.5,
             fontWeight: FontWeight.w500,
           ),
-          cursorColor: accentYellowDeep,
+          cursorColor: accentDeep,
           decoration: InputDecoration(
             hintText: resolvedHint,
             hintStyle: TextStyle(

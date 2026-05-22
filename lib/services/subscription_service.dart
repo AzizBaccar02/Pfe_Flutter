@@ -4,20 +4,22 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-import '../models/agent_my_reaction_model.dart';
-import '../models/interested_agent_model.dart';
+import '../models/subscription_model.dart';
+import '../models/subscription_plan_model.dart';
 import 'auth_service.dart';
 
-class InteractionService {
-  static const String _interestedAgentsPath =
-      '/api/interactions/client/interested-agents/';
-  static const String _myReactionsPath = '/api/interactions/my-reactions/';
+class SubscriptionService {
+  static const String _plansPath = '/api/subscriptions/plans/';
+  static const String _mePath = '/api/subscriptions/me/';
+  static const String _checkoutPath =
+      '/api/subscriptions/create-checkout-session/';
+  static const String _portalPath = '/api/subscriptions/create-portal-session/';
 
-  static Future<List<AgentMyReactionModel>> fetchMyOfferReactions() async {
+  static Future<List<SubscriptionPlanModel>> fetchPlans() async {
     final response = await _authorizedRequest(
       requestBuilder: (headers) {
         return http.get(
-          AuthService.apiUri(_myReactionsPath),
+          AuthService.apiUri(_plansPath),
           headers: headers,
         );
       },
@@ -26,64 +28,25 @@ class InteractionService {
     final decoded = _decodeResponse(response);
 
     if (response.statusCode != 200) {
-      throw InteractionException(_extractErrorMessage(decoded));
+      throw SubscriptionException(_extractErrorMessage(decoded));
     }
 
     if (decoded is! List) {
-      throw const InteractionException(
-        'Invalid reactions response from server.',
-      );
+      throw const SubscriptionException('Invalid plans response from server.');
     }
 
     return decoded
         .whereType<Map<String, dynamic>>()
-        .map(AgentMyReactionModel.fromJson)
-        .where((r) => r.id > 0)
+        .map(SubscriptionPlanModel.fromJson)
+        .where((plan) => plan.id > 0)
         .toList();
   }
 
-  static Future<void> reactToOffer({
-    required int offerId,
-    required bool react,
-  }) async {
-    if (offerId <= 0) {
-      throw const InteractionException('Invalid offer.');
-    }
-
-    final response = await _authorizedRequest(
-      requestBuilder: (headers) {
-        return http.post(
-          AuthService.apiUri(
-            '/api/interactions/offers/$offerId/react/',
-          ),
-          headers: headers,
-          body: jsonEncode({'react': react}),
-        );
-      },
-    );
-
-    final decoded = _decodeResponse(response);
-
-    if (response.statusCode != 201) {
-      throw InteractionException(_extractErrorMessage(decoded));
-    }
-  }
-
-  static Future<List<InterestedAgentModel>> fetchInterestedAgents({
-    int? offerId,
-  }) async {
-    final uri = offerId == null
-        ? AuthService.apiUri(_interestedAgentsPath)
-        : AuthService.apiUri(_interestedAgentsPath).replace(
-            queryParameters: {
-              'offer_id': offerId.toString(),
-            },
-          );
-
+  static Future<MySubscriptionModel> fetchMySubscription() async {
     final response = await _authorizedRequest(
       requestBuilder: (headers) {
         return http.get(
-          uri,
+          AuthService.apiUri(_mePath),
           headers: headers,
         );
       },
@@ -92,39 +55,25 @@ class InteractionService {
     final decoded = _decodeResponse(response);
 
     if (response.statusCode != 200) {
-      throw InteractionException(_extractErrorMessage(decoded));
+      throw SubscriptionException(_extractErrorMessage(decoded));
     }
 
-    if (decoded is! List) {
-      throw const InteractionException(
-        'Invalid interested agents response from server.',
+    if (decoded is! Map<String, dynamic>) {
+      throw const SubscriptionException(
+        'Invalid subscription response from server.',
       );
     }
 
-    return decoded
-        .whereType<Map<String, dynamic>>()
-        .map(InterestedAgentModel.fromJson)
-        .toList();
+    return MySubscriptionModel.fromJson(decoded);
   }
 
-  static Future<void> respondToReaction({
-    required int reactionId,
-    required bool accept,
-  }) async {
-    if (reactionId <= 0) {
-      throw const InteractionException('Invalid reaction selected.');
-    }
-
+  static Future<String> createCheckoutSession({required int planId}) async {
     final response = await _authorizedRequest(
       requestBuilder: (headers) {
         return http.post(
-          AuthService.apiUri(
-            '/api/interactions/reactions/$reactionId/respond/',
-          ),
+          AuthService.apiUri(_checkoutPath),
           headers: headers,
-          body: jsonEncode({
-            'accept': accept,
-          }),
+          body: jsonEncode({'planId': planId}),
         );
       },
     );
@@ -132,8 +81,49 @@ class InteractionService {
     final decoded = _decodeResponse(response);
 
     if (response.statusCode != 200) {
-      throw InteractionException(_extractErrorMessage(decoded));
+      throw SubscriptionException(_extractErrorMessage(decoded));
     }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const SubscriptionException('Invalid checkout response from server.');
+    }
+
+    final checkoutUrl = decoded['checkoutUrl']?.toString().trim() ?? '';
+
+    if (checkoutUrl.isEmpty) {
+      throw const SubscriptionException('Checkout URL was not returned.');
+    }
+
+    return checkoutUrl;
+  }
+
+  static Future<String> createPortalSession() async {
+    final response = await _authorizedRequest(
+      requestBuilder: (headers) {
+        return http.post(
+          AuthService.apiUri(_portalPath),
+          headers: headers,
+        );
+      },
+    );
+
+    final decoded = _decodeResponse(response);
+
+    if (response.statusCode != 200) {
+      throw SubscriptionException(_extractErrorMessage(decoded));
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const SubscriptionException('Invalid portal response from server.');
+    }
+
+    final portalUrl = decoded['portalUrl']?.toString().trim() ?? '';
+
+    if (portalUrl.isEmpty) {
+      throw const SubscriptionException('Portal URL was not returned.');
+    }
+
+    return portalUrl;
   }
 
   static Future<http.Response> _authorizedRequest({
@@ -143,7 +133,7 @@ class InteractionService {
     final token = await AuthService.getAccessToken();
 
     if (token == null || token.trim().isEmpty) {
-      throw const InteractionException(
+      throw const SubscriptionException(
         'Your session expired. Please login again.',
       );
     }
@@ -159,21 +149,21 @@ class InteractionService {
         const Duration(seconds: 25),
       );
     } on TimeoutException {
-      throw const InteractionException(
+      throw const SubscriptionException(
         'The request took too long. Please check your connection and try again.',
       );
     } on http.ClientException {
-      throw const InteractionException(
+      throw const SubscriptionException(
         'Unable to reach the server. Please make sure the backend is running.',
       );
     } on SocketException {
-      throw const InteractionException(
+      throw const SubscriptionException(
         'No internet connection. Please check your network.',
       );
     } catch (e) {
-      if (e is InteractionException) rethrow;
+      if (e is SubscriptionException) rethrow;
 
-      throw const InteractionException(
+      throw const SubscriptionException(
         'Something went wrong. Please try again.',
       );
     }
@@ -209,28 +199,16 @@ class InteractionService {
       if (detail != null && detail.toString().trim().isNotEmpty) {
         return detail.toString();
       }
-
-      for (final entry in body.entries) {
-        final value = entry.value;
-
-        if (value is List && value.isNotEmpty) {
-          return value.first.toString();
-        }
-
-        if (value is String && value.trim().isNotEmpty) {
-          return value;
-        }
-      }
     }
 
     return 'Something went wrong. Please try again.';
   }
 }
 
-class InteractionException implements Exception {
+class SubscriptionException implements Exception {
   final String message;
 
-  const InteractionException(this.message);
+  const SubscriptionException(this.message);
 
   @override
   String toString() => message;
