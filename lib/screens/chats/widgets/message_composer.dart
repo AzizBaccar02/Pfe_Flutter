@@ -19,10 +19,10 @@ class MessageComposer extends StatelessWidget {
   Widget build(BuildContext context) {
     const accentGreen = Color(0xFF22C55E);
 
-    final composerColor = isDarkMode ? const Color(0xFF0B0F14) : Colors.white;
+    final composerColor = isDarkMode ? const Color(0xFF000000) : Colors.white;
 
     final fieldColor =
-        isDarkMode ? const Color(0xFF151A21) : const Color(0xFFF1F2F4);
+        isDarkMode ? const Color(0xFF1A1A1A) : const Color(0xFFF1F2F4);
 
     final textColor = isDarkMode ? Colors.white : const Color(0xFF111827);
 
@@ -47,19 +47,6 @@ class MessageComposer extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          SizedBox(
-            width: 34,
-            height: 46,
-            child: Center(
-              child: Icon(
-                Icons.add_rounded,
-                color: isDarkMode
-                    ? Colors.white.withOpacity(0.58)
-                    : Colors.black.withOpacity(0.56),
-                size: 24,
-              ),
-            ),
-          ),
           Expanded(
             child: Container(
               constraints: const BoxConstraints(minHeight: 46),

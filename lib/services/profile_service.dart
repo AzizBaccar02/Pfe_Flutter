@@ -31,14 +31,9 @@ class ProfileService {
 
   static String? resolveMediaUrl(String? rawUrl) {
     if (rawUrl == null) return null;
-
     final value = rawUrl.trim();
     if (value.isEmpty) return null;
-
-    if (value.startsWith('http://') || value.startsWith('https://')) {
-      return value;
-    }
-
+    if (value.startsWith('http://') || value.startsWith('https://')) return value;
     return '$_baseUrl$value';
   }
 
@@ -55,7 +50,7 @@ class ProfileService {
       headers: _jsonHeaders(token),
     ).timeout(const Duration(seconds: 20));
 
-    final meJson = _decodeBody(meResponse);
+    final meJson     = _decodeBody(meResponse);
     final clientJson = _decodeBody(clientResponse);
 
     if (meResponse.statusCode != 200) {
@@ -67,9 +62,36 @@ class ProfileService {
     }
 
     return ClientProfileModel.fromApi(
-      meJson: meJson as Map<String, dynamic>,
+      meJson:     meJson     as Map<String, dynamic>,
       clientJson: clientJson as Map<String, dynamic>,
     );
+  }
+
+  /// Fetches any agent's public profile by their user ID.
+  /// Calls GET /api/users/agent/profile/<agentUserId>/
+  static Future<AgentProfileModel?> getAgentPublicProfile(int agentUserId) async {
+    try {
+      final token    = await _getAccessToken();
+      final response = await http
+          .get(
+            _uri('/api/users/agent/profile/$agentUserId/'),
+            headers: _jsonHeaders(token),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode != 200) {
+        debugPrint('[PROFILE_SERVICE] getAgentPublicProfile($agentUserId) → ${response.statusCode}');
+        return null;
+      }
+
+      final decoded = _decodeBody(response);
+      if (decoded is! Map<String, dynamic>) return null;
+
+      return AgentProfileModel.fromPublicMap(decoded);
+    } catch (e) {
+      debugPrint('[PROFILE_SERVICE] getAgentPublicProfile($agentUserId): $e');
+      return null;
+    }
   }
 
   static Future<AgentProfileModel> getAgentProfile() async {
@@ -85,7 +107,7 @@ class ProfileService {
       headers: _jsonHeaders(token),
     ).timeout(const Duration(seconds: 20));
 
-    final meJson = _decodeBody(meResponse);
+    final meJson    = _decodeBody(meResponse);
     final agentJson = _decodeBody(agentResponse);
 
     if (meResponse.statusCode != 200) {
@@ -97,7 +119,7 @@ class ProfileService {
     }
 
     return AgentProfileModel.fromApi(
-      meJson: meJson as Map<String, dynamic>,
+      meJson:    meJson    as Map<String, dynamic>,
       agentJson: agentJson as Map<String, dynamic>,
     );
   }
@@ -113,12 +135,11 @@ class ProfileService {
       headers: _jsonHeaders(token),
       body: jsonEncode({
         'first_name': firstName.trim(),
-        'last_name': lastName.trim(),
+        'last_name':  lastName.trim(),
       }),
     ).timeout(const Duration(seconds: 20));
 
     final decoded = _decodeBody(response);
-
     if (response.statusCode != 200) {
       throw ProfileException(_extractErrorMessage(decoded));
     }
@@ -135,12 +156,11 @@ class ProfileService {
       headers: _jsonHeaders(token),
       body: jsonEncode({
         'first_name': firstName.trim(),
-        'last_name': lastName.trim(),
+        'last_name':  lastName.trim(),
       }),
     ).timeout(const Duration(seconds: 20));
 
     final decoded = _decodeBody(response);
-
     if (response.statusCode != 200) {
       throw ProfileException(_extractErrorMessage(decoded));
     }
@@ -152,22 +172,18 @@ class ProfileService {
   }) async {
     final token = await _getAccessToken();
 
-    final request = http.MultipartRequest(
-      'PATCH',
-      _uri('/api/users/profile/'),
-    );
-
+    final request = http.MultipartRequest('PATCH', _uri('/api/users/profile/'));
     request.headers['Authorization'] = 'Bearer $token';
-    request.headers['Accept'] = 'application/json';
-    request.fields['phone'] = phone.trim();
+    request.headers['Accept']        = 'application/json';
+    request.fields['phone']          = phone.trim();
 
     if (photoPath != null && photoPath.trim().isNotEmpty) {
       request.files.add(await http.MultipartFile.fromPath('photo', photoPath));
     }
 
-    final streamed = await request.send().timeout(const Duration(seconds: 20));
-    final response = await http.Response.fromStream(streamed);
-    final decoded = _decodeBody(response);
+    final streamed  = await request.send().timeout(const Duration(seconds: 20));
+    final response  = await http.Response.fromStream(streamed);
+    final decoded   = _decodeBody(response);
 
     if (response.statusCode != 200) {
       throw ProfileException(_extractErrorMessage(decoded));
@@ -189,10 +205,9 @@ class ProfileService {
     );
 
     request.headers['Authorization'] = 'Bearer $token';
-    request.headers['Accept'] = 'application/json';
-
-    request.fields['phone'] = phone.trim();
-    request.fields['city'] = city.trim();
+    request.headers['Accept']        = 'application/json';
+    request.fields['phone']          = phone.trim();
+    request.fields['city']           = city.trim();
 
     if (address != null && address.trim().isNotEmpty) {
       request.fields['address'] = address.trim();
@@ -208,7 +223,7 @@ class ProfileService {
 
     final streamed = await request.send().timeout(const Duration(seconds: 20));
     final response = await http.Response.fromStream(streamed);
-    final decoded = _decodeBody(response);
+    final decoded  = _decodeBody(response);
 
     if (response.statusCode != 200) {
       throw ProfileException(_extractErrorMessage(decoded));
@@ -226,14 +241,13 @@ class ProfileService {
       _uri('/api/users/agent/profile/me/'),
       headers: _jsonHeaders(token),
       body: jsonEncode({
-        'bio': bio.trim(),
-        'skills': skills.trim(),
+        'bio':        bio.trim(),
+        'skills':     skills.trim(),
         'hourlyRate': hourlyRate,
       }),
     ).timeout(const Duration(seconds: 20));
 
     final decoded = _decodeBody(response);
-
     if (response.statusCode != 200) {
       throw ProfileException(_extractErrorMessage(decoded));
     }
@@ -246,9 +260,7 @@ class ProfileService {
   }) async {
     final token = await _getAccessToken();
 
-    final payload = <String, dynamic>{
-      'city': city,
-    };
+    final payload = <String, dynamic>{'city': city};
 
     if (address != null && address.trim().isNotEmpty) {
       payload['address'] = address.trim();
@@ -265,7 +277,6 @@ class ProfileService {
     ).timeout(const Duration(seconds: 20));
 
     final decoded = _decodeBody(response);
-
     if (response.statusCode != 200) {
       throw ProfileException(_extractErrorMessage(decoded));
     }
@@ -273,25 +284,22 @@ class ProfileService {
 
   static Future<String> _getAccessToken() async {
     final token = await AuthService.getAccessToken();
-
     if (token == null || token.isEmpty) {
       throw const ProfileException('No active session found.');
     }
-
     return token;
   }
 
   static Map<String, String> _jsonHeaders(String token) {
     return {
       'Authorization': 'Bearer $token',
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      'Content-Type':  'application/json',
+      'Accept':        'application/json',
     };
   }
 
   static dynamic _decodeBody(http.Response response) {
     if (response.body.isEmpty) return null;
-
     try {
       return jsonDecode(response.body);
     } catch (_) {
@@ -300,35 +308,21 @@ class ProfileService {
   }
 
   static String _extractErrorMessage(dynamic body) {
-    if (body == null) {
-      return 'Something went wrong. Please try again.';
-    }
+    if (body == null) return 'Something went wrong. Please try again.';
 
-    if (body is String && body.trim().isNotEmpty) {
-      return body;
-    }
+    if (body is String && body.trim().isNotEmpty) return body;
 
     if (body is Map<String, dynamic>) {
-      if (body['message'] != null &&
-          body['message'].toString().trim().isNotEmpty) {
+      if (body['message'] != null && body['message'].toString().trim().isNotEmpty) {
         return body['message'].toString();
       }
-
-      if (body['detail'] != null &&
-          body['detail'].toString().trim().isNotEmpty) {
+      if (body['detail'] != null && body['detail'].toString().trim().isNotEmpty) {
         return body['detail'].toString();
       }
-
       for (final entry in body.entries) {
         final value = entry.value;
-
-        if (value is List && value.isNotEmpty) {
-          return value.first.toString();
-        }
-
-        if (value is String && value.trim().isNotEmpty) {
-          return value;
-        }
+        if (value is List && value.isNotEmpty) return value.first.toString();
+        if (value is String && value.trim().isNotEmpty) return value;
       }
     }
 
@@ -338,7 +332,6 @@ class ProfileService {
 
 class ProfileException implements Exception {
   final String message;
-
   const ProfileException(this.message);
 
   @override

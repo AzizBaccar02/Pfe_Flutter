@@ -7,6 +7,7 @@ import 'package:hugeicons/hugeicons.dart';
 
 import '../../../models/chat_conversation_summary_model.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/chat_conversation_display_name_service.dart';
 import '../../../services/chat_service.dart';
 import '../chat_conversation_screen.dart';
 
@@ -110,7 +111,7 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
         if (!mounted) return;
 
         if (!widget.isChatsTabActive && unreadIncomingChats.isNotEmpty) {
-          _showBanner(_latestChat(unreadIncomingChats));
+          await _showBanner(_latestChat(unreadIncomingChats));
         }
 
         return;
@@ -150,7 +151,7 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
       if (!mounted) return;
 
       if (newMessageChats.isNotEmpty && !widget.isChatsTabActive) {
-        _showBanner(_latestChat(newMessageChats));
+        await _showBanner(_latestChat(newMessageChats));
       }
     } catch (_) {
       // Global notification sync should stay silent.
@@ -194,8 +195,11 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
       );
   }
 
-  void _showBanner(ChatConversationSummaryModel chat) {
+  Future<void> _showBanner(ChatConversationSummaryModel chat) async {
     _hideTimer?.cancel();
+
+    await ChatConversationDisplayNameService.instance.ensureLoaded();
+    if (!mounted) return;
 
     setState(() {
       _activeNotificationChat = chat;
@@ -263,6 +267,9 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
                     ? const SizedBox.shrink()
                     : _NewMessageBanner(
                         chat: chat,
+                        peerTitle:
+                            ChatConversationDisplayNameService.instance
+                                .resolve(chat.id, chat.displayName),
                         onTap: _openNotificationChat,
                         onClose: _hideBanner,
                       ),
@@ -284,11 +291,13 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
 
 class _NewMessageBanner extends StatelessWidget {
   final ChatConversationSummaryModel chat;
+  final String peerTitle;
   final VoidCallback onTap;
   final VoidCallback onClose;
 
   const _NewMessageBanner({
     required this.chat,
+    required this.peerTitle,
     required this.onTap,
     required this.onClose,
   });
@@ -381,7 +390,7 @@ class _NewMessageBanner extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${chat.displayName} • ${chat.offerTitle}',
+                      '$peerTitle • ${chat.offerTitle}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

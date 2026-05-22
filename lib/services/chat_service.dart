@@ -69,6 +69,25 @@ class ChatService {
     return WebSocketChannel.connect(socketUri);
   }
 
+  /// Matches Django `routing.websocket_urlpatterns` entry `ws/chats/inbox/`.
+  /// Receives `presence_update`, `chat_list_updated`, etc. ([UserChatsConsumer]).
+  static Future<WebSocketChannel> connectToUserChatsInboxSocket() async {
+    final token = await AuthService.getAccessToken();
+
+    if (token == null || token.isEmpty) {
+      throw const ChatServiceException('No active session found.');
+    }
+
+    final encodedToken = Uri.encodeComponent(token);
+    final socketUri = Uri.parse(
+      '$_socketBaseUrl/ws/chats/inbox/?token=$encodedToken',
+    );
+
+    _log('Connecting user chats inbox socket: $socketUri');
+
+    return WebSocketChannel.connect(socketUri);
+  }
+
   static void sendSocketMessage({
     required WebSocketChannel channel,
     required String content,
@@ -444,6 +463,97 @@ class ChatService {
     _log('================ DELETE MESSAGE DEBUG END ==================');
 
     return deletedMessageId;
+  }
+
+  static Future<void> deleteChat({
+    required int chatId,
+  }) async {
+    _log('================ DELETE CHAT DEBUG START ================');
+    _log('Chat ID: $chatId');
+
+    final candidates = [
+      '/api/chats/$chatId/delete/',
+      '/api/chats/$chatId/',
+    ];
+
+    Object? lastError;
+
+    for (final path in candidates) {
+      for (final statusCode in [200, 204]) {
+        try {
+          _log('Trying DELETE $path (expect $statusCode)');
+          await _deleteJson(
+            path: path,
+            expectedStatusCode: statusCode,
+          );
+          _log('================ DELETE CHAT DEBUG END ==================');
+          return;
+        } catch (e) {
+          lastError = e;
+          _log('DELETE failed for $path ($statusCode): $e');
+        }
+      }
+    }
+
+    _log('================ DELETE CHAT DEBUG END ==================');
+
+    if (lastError is ChatServiceException) {
+      throw lastError;
+    }
+
+    throw const ChatServiceException('Unable to delete conversation.');
+  }
+
+  /// Closes the offer linked to this chat (`POST` or `PATCH` `/api/chats/{id}/close/`).
+  static Future<void> closeChatOffer({
+    required int chatId,
+  }) async {
+    _log('================ CLOSE CHAT OFFER DEBUG START ================');
+    _log('Chat ID: $chatId');
+
+    final path = '/api/chats/$chatId/close/';
+    final statusCodes = [200, 201, 204];
+    Object? lastError;
+
+    for (final statusCode in statusCodes) {
+      try {
+        _log('Trying POST $path (expect $statusCode)');
+        await _postJson(
+          path: path,
+          payload: const {},
+          expectedStatusCode: statusCode,
+        );
+        _log('================ CLOSE CHAT OFFER DEBUG END ==================');
+        return;
+      } catch (e) {
+        lastError = e;
+        _log('POST failed for $path ($statusCode): $e');
+      }
+    }
+
+    for (final statusCode in statusCodes) {
+      try {
+        _log('Trying PATCH $path (expect $statusCode)');
+        await _patchJson(
+          path: path,
+          payload: const {},
+          expectedStatusCode: statusCode,
+        );
+        _log('================ CLOSE CHAT OFFER DEBUG END ==================');
+        return;
+      } catch (e) {
+        lastError = e;
+        _log('PATCH failed for $path ($statusCode): $e');
+      }
+    }
+
+    _log('================ CLOSE CHAT OFFER DEBUG END ==================');
+
+    if (lastError is ChatServiceException) {
+      throw lastError;
+    }
+
+    throw const ChatServiceException('Unable to close offer.');
   }
 
   static Future<void> markAllMessagesAsRead({

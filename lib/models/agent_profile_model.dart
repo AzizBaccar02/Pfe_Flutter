@@ -1,4 +1,5 @@
 class AgentProfileModel {
+  final int? userId;
   final String firstName;
   final String lastName;
   final String email;
@@ -13,6 +14,7 @@ class AgentProfileModel {
   final bool isProfileCompleted;
 
   const AgentProfileModel({
+    this.userId,
     required this.firstName,
     required this.lastName,
     required this.email,
@@ -27,25 +29,59 @@ class AgentProfileModel {
     required this.isProfileCompleted,
   });
 
-  String get fullName {
-    final value = [
-      firstName.trim(),
-      lastName.trim(),
-    ].where((part) => part.isNotEmpty).join(' ');
+  String get displayName {
+    final full = '$firstName $lastName'.trim();
+    return full.isEmpty ? 'Agent' : full;
+  }
 
-    if (value.isEmpty) return 'Agent';
+  bool get hasDisplayableContent =>
+      city.isNotEmpty ||
+      phone.isNotEmpty ||
+      bio.isNotEmpty ||
+      skills.isNotEmpty ||
+      hourlyRate > 0;
 
-    return value;
+  factory AgentProfileModel.fromPublicMap(Map<String, dynamic> json) {
+    final firstName = (json['first_name'] ?? json['firstName'] ?? '').toString();
+    final lastName  = (json['last_name']  ?? json['lastName']  ?? '').toString();
+    final email     = (json['email'] ?? '').toString();
+    final rawHourlyRate = json['hourlyRate'] ?? json['hourly_rate'] ?? 0;
+
+    final photoRaw = _pickPhoto(json) ?? '';
+    final photoUrl = photoRaw.startsWith('http')
+        ? photoRaw
+        : photoRaw.isNotEmpty
+            ? 'http://127.0.0.1:8000$photoRaw'
+            : '';
+
+    return AgentProfileModel(
+      firstName:          firstName,
+      lastName:           lastName,
+      email:              email,
+      phone:              (json['phone'] ?? '').toString(),
+      photoUrl:           photoUrl,
+      bio:                (json['bio'] ?? '').toString(),
+      skills:             (json['skills'] ?? '').toString(),
+      hourlyRate:         double.tryParse(rawHourlyRate.toString()) ?? 0,
+      city:               (json['city_value'] ?? json['city'] ?? '').toString(),
+      address:            (json['address_value'] ?? json['address'] ?? '').toString(),
+      postalCode:         (json['postal_code_value'] ?? json['postalCode'] ?? '').toString(),
+      isProfileCompleted: json['isProfileCompleted'] == true,
+    );
   }
 
   factory AgentProfileModel.fromApi({
     required Map<String, dynamic> meJson,
     required Map<String, dynamic> agentJson,
   }) {
-    final profile = (meJson['profile'] as Map<String, dynamic>?) ?? {};
+    final rawHourlyRate = agentJson['hourlyRate'] ?? 0;
 
-    final rawHourlyRate =
-        agentJson['hourlyRate'] ?? profile['hourlyRate'] ?? 0;
+    final photoRaw = (agentJson['photo'] ?? '').toString();
+    final photoUrl = photoRaw.startsWith('http')
+        ? photoRaw
+        : photoRaw.isNotEmpty
+            ? 'http://127.0.0.1:8000$photoRaw'
+            : '';
 
     return AgentProfileModel(
       firstName: (meJson['first_name'] ?? '').toString(),
@@ -62,4 +98,15 @@ class AgentProfileModel {
       isProfileCompleted: meJson['isProfileCompleted'] == true,
     );
   }
+}
+
+String? _pickPhoto(Map<String, dynamic> map) {
+  for (final key in [
+    'photo', 'photoUrl', 'photo_url', 'avatar',
+    'avatar_url', 'profile_photo', 'profile_picture', 'image',
+  ]) {
+    final value = map[key]?.toString().trim();
+    if (value != null && value.isNotEmpty) return value;
+  }
+  return null;
 }

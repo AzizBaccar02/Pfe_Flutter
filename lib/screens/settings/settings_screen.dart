@@ -231,7 +231,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             vertical: 8,
                           ),
                           itemCount: filteredItems.length,
-                          separatorBuilder: (_, __) => Divider(
+                          separatorBuilder: (_, _) => Divider(
                             color: borderColor,
                             height: 1,
                           ),

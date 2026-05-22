@@ -13,7 +13,7 @@ class NotificationEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = AppColors.accent;
+    const accentGreen = Color(0xFF22C55E);
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -41,7 +41,7 @@ class NotificationEmptyState extends StatelessWidget {
                 width: 72,
                 height: 72,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: isDarkMode ? 0.10 : 0.14),
+                  color: accentGreen.withOpacity(isDarkMode ? 0.10 : 0.14),
                   borderRadius: BorderRadius.circular(22),
                 ),
                 child: Center(

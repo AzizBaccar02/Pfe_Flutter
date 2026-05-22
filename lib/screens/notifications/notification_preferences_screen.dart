@@ -26,7 +26,7 @@ class _NotificationPreferencesScreenState
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    const accent = AppColors.accent;
+    const accentGreen = Color(0xFF22C55E);
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
     final cardColor =
@@ -87,7 +87,7 @@ class _NotificationPreferencesScreenState
                       width: 50,
                       height: 50,
                       decoration: BoxDecoration(
-                        color: accent.withValues(alpha: isDarkMode ? 0.10 : 0.14),
+                        color: accentGreen.withOpacity(isDarkMode ? 0.10 : 0.14),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Center(

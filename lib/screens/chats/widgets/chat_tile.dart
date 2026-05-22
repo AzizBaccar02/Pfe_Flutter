@@ -1,245 +1,328 @@
 // lib/screens/chats/widgets/chat_tile.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 
 import '../../../models/chat_conversation_summary_model.dart';
+import '../../../services/profile_service.dart';
+import 'chat_offer_label.dart';
+import 'chat_unread_badge.dart';
 
 class ChatTile extends StatelessWidget {
   final ChatConversationSummaryModel chat;
   final int currentUserId;
+  /// Resolved title (local nickname or server display name).
+  final String conversationTitle;
   final String trailingText;
   final Color primaryTextColor;
   final Color secondaryTextColor;
   final VoidCallback? onTap;
+  final VoidCallback? onCloseOffer;
+  final VoidCallback? onDeleteChat;
+  final VoidCallback? onArchiveChat;
+  final VoidCallback? onUnarchive;
+  /// Distinct [Slidable] group so archived and main lists do not auto-close each other.
+  final String slidableGroupTag;
 
   const ChatTile({
     super.key,
     required this.chat,
     required this.currentUserId,
+    required this.conversationTitle,
     required this.trailingText,
     required this.primaryTextColor,
     required this.secondaryTextColor,
     this.onTap,
+    this.onCloseOffer,
+    this.onDeleteChat,
+    this.onArchiveChat,
+    this.onUnarchive,
+    this.slidableGroupTag = 'chats_screen',
   });
+
+  static const _accentGreen = Color(0xFF22C55E);
+  static const _closeOfferColor = Color(0xFFC9A227);
+  static const _deleteColor = Color(0xFFE53935);
+  static const _archiveColor = Color(0xFF6B7280);
+  static const _unarchiveColor = Color(0xFF15803D);
+
+  Widget _buildAvatar({
+    required bool isDarkMode,
+    required bool isPeerOnline,
+  }) {
+    final resolved = ProfileService.resolveMediaUrl(
+      chat.resolvePeerPhotoUrl(viewerUserId: currentUserId).trim(),
+    );
+    const radius = 26.0;
+    final diameter = radius * 2;
+    final initials = chat.displayInitials;
+    final ringColor = isDarkMode ? Colors.black : Colors.white;
+
+    Widget initialsLabel() {
+      return Text(
+        initials,
+        style: TextStyle(
+          color: primaryTextColor.withOpacity(0.82),
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+      );
+    }
+
+    Widget avatarFace() {
+      final baseBg = isDarkMode ? Colors.black : const Color(0xFFE5E7EB);
+      if (resolved != null && resolved.isNotEmpty) {
+        return ClipOval(
+          child: Container(
+            width: diameter,
+            height: diameter,
+            color: baseBg,
+            child: Image.network(
+              resolved,
+              width: diameter,
+              height: diameter,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) =>
+                  Center(child: initialsLabel()),
+            ),
+          ),
+        );
+      }
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: baseBg,
+        child: initialsLabel(),
+      );
+    }
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        avatarFace(),
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: Container(
+            width: 13,
+            height: 13,
+            decoration: BoxDecoration(
+              color: ringColor,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: ringColor,
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              child: Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: isPeerOnline ? _accentGreen : secondaryTextColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
-
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    final cardColor =
-        isDarkMode ? const Color(0xFF111827) : Colors.white;
-
-    final avatarColor =
-        isDarkMode ? const Color(0xFF1F2937) : const Color(0xFFE5E7EB);
-
-    final hasUnread = chat.unreadCount > 0;
+    final hasUnread = chat.hasUnreadIncomingForViewer(currentUserId);
+    final unreadCount = chat.effectiveUnreadCountForViewer(currentUserId);
     final lastMessage = chat.lastMessage;
-    final isLastMessageMine =
-        lastMessage != null && lastMessage.senderId == currentUserId;
+    final isLastMessageMine = chat.isLastMessageFromViewer(currentUserId);
+    final isPeerOnline = chat.peerOnlineForViewer(currentUserId);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(24),
-          child: Ink(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: cardColor,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: hasUnread
-                    ? accentGreen.withOpacity(0.26)
-                    : (isDarkMode
-                        ? Colors.white.withOpacity(0.06)
-                        : Colors.black.withOpacity(0.04)),
+    final tile = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.zero,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isDarkMode
+                    ? Colors.white.withOpacity(0.06)
+                    : Colors.black.withOpacity(0.06),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(isDarkMode ? 0.14 : 0.04),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Stack(
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildAvatar(
+                isDarkMode: isDarkMode,
+                isPeerOnline: isPeerOnline,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundColor: hasUnread
-                          ? accentGreen.withOpacity(0.14)
-                          : avatarColor,
-                      child: Text(
-                        chat.displayInitials,
-                        style: TextStyle(
-                          color: hasUnread
-                              ? accentGreen
-                              : primaryTextColor.withOpacity(0.82),
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    Text(
+                      conversationTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: primaryTextColor,
+                        fontSize: 16.5,
+                        fontWeight: hasUnread
+                            ? FontWeight.w900
+                            : FontWeight.w800,
+                        letterSpacing: -0.2,
                       ),
                     ),
-                    if (hasUnread)
-                      Positioned(
-                        right: 1,
-                        bottom: 1,
-                        child: Container(
-                          width: 13,
-                          height: 13,
-                          decoration: BoxDecoration(
-                            color: accentGreen,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: cardColor,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              chat.displayName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: primaryTextColor,
-                                fontSize: 16.2,
-                                fontWeight:
-                                    hasUnread ? FontWeight.w900 : FontWeight.w800,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            trailingText,
-                            style: TextStyle(
-                              color: hasUnread
-                                  ? accentGreen
-                                  : secondaryTextColor,
-                              fontSize: 12,
-                              fontWeight:
-                                  hasUnread ? FontWeight.w900 : FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          if (isLastMessageMine) ...[
-                            Icon(
-                              lastMessage!.isRead
+                    const SizedBox(height: 3),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (isLastMessageMine && lastMessage != null) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Icon(
+                              lastMessage.isRead
                                   ? Icons.done_all_rounded
                                   : Icons.done_rounded,
-                              size: 15,
+                              size: 14,
                               color: lastMessage.isRead
-                                  ? accentGreen
+                                  ? _accentGreen
                                   : secondaryTextColor.withOpacity(0.82),
                             ),
-                            const SizedBox(width: 4),
-                          ],
-                          Expanded(
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 1),
                             child: Text(
                               chat.previewText,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: hasUnread
-                                    ? primaryTextColor.withOpacity(0.86)
+                                    ? primaryTextColor.withOpacity(0.95)
                                     : secondaryTextColor,
-                                fontSize: 13.8,
+                                fontSize: 13.5,
+                                height: 1.15,
                                 fontWeight: hasUnread
-                                    ? FontWeight.w800
-                                    : FontWeight.w600,
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 9),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: accentGreen.withOpacity(
-                                  isDarkMode ? 0.12 : 0.09,
-                                ),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: accentGreen.withOpacity(0.18),
-                                ),
-                              ),
-                              child: Text(
-                                chat.offerTitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: isDarkMode
-                                      ? Colors.white.withOpacity(0.84)
-                                      : const Color(0xFF166534),
-                                  fontSize: 11.4,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ChatOfferLabel(
+                              offerTitle: chat.offerTitle,
+                              color: secondaryTextColor,
+                              maxWidth: 148,
+                              textAlign: TextAlign.end,
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          if (hasUnread)
-                            Container(
-                              constraints: const BoxConstraints(
-                                minWidth: 22,
-                                minHeight: 22,
-                              ),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              decoration: const BoxDecoration(
-                                color: accentGreen,
-                                shape: BoxShape.circle,
-                              ),
-                              alignment: Alignment.center,
-                              child: Text(
-                                chat.unreadCount > 9
-                                    ? '9+'
-                                    : '${chat.unreadCount}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w900,
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  trailingText,
+                                  style: TextStyle(
+                                    color: hasUnread
+                                        ? _accentGreen
+                                        : secondaryTextColor,
+                                    fontSize: 12,
+                                    fontWeight: hasUnread
+                                        ? FontWeight.w900
+                                        : FontWeight.w600,
+                                  ),
                                 ),
-                              ),
+                                if (hasUnread) ...[
+                                  const SizedBox(width: 6),
+                                  ChatUnreadBadge(count: unreadCount),
+                                ],
+                              ],
                             ),
-                        ],
-                      ),
-                    ],
-                  ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+
+    final hasActions = onCloseOffer != null ||
+        onDeleteChat != null ||
+        onArchiveChat != null ||
+        onUnarchive != null;
+
+    if (!hasActions) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: tile,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Slidable(
+        key: ValueKey('chat_slidable_${chat.id}'),
+        groupTag: slidableGroupTag,
+        closeOnScroll: true,
+        endActionPane: ActionPane(
+          extentRatio: 0.46,
+          motion: const DrawerMotion(),
+          children: [
+            if (onCloseOffer != null)
+              SlidableAction(
+                onPressed: (_) => onCloseOffer!(),
+                backgroundColor: _closeOfferColor,
+                foregroundColor: Colors.white,
+                icon: Icons.work_off_outlined,
+                label: 'Close offer',
+              ),
+            if (onDeleteChat != null)
+              SlidableAction(
+                onPressed: (_) => onDeleteChat!(),
+                backgroundColor: _deleteColor,
+                foregroundColor: Colors.white,
+                icon: Icons.delete_outline_rounded,
+                label: 'Delete',
+              ),
+            if (onArchiveChat != null)
+              SlidableAction(
+                onPressed: (_) => onArchiveChat!(),
+                backgroundColor: _archiveColor,
+                foregroundColor: Colors.white,
+                icon: Icons.archive_outlined,
+                label: 'Archive',
+              ),
+            if (onUnarchive != null)
+              SlidableAction(
+                onPressed: (_) => onUnarchive!(),
+                backgroundColor: _unarchiveColor,
+                foregroundColor: Colors.white,
+                icon: Icons.unarchive_outlined,
+                label: 'Unarchive',
+              ),
+          ],
+        ),
+        child: tile,
       ),
     );
   }

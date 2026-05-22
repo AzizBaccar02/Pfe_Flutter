@@ -28,7 +28,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
     final items = MockNotificationData.all;
 
-    const accent = AppColors.accent;
+    const accentGreen = Color(0xFF22C55E);
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
@@ -104,7 +104,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                           width: 50,
                           height: 50,
                           decoration: BoxDecoration(
-                            color: accent.withOpacity(
+                            color: accentGreen.withOpacity(
                               isDarkMode ? 0.10 : 0.14,
                             ),
                             borderRadius: BorderRadius.circular(16),

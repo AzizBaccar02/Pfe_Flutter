@@ -64,19 +64,35 @@ class NotificationService {
   }
 
   static Future<WebSocketChannel> connectToNotificationSocket() async {
+    final token = await AuthService.getAccessToken();
     final userId = await AuthService.getStoredUserId();
 
     debugPrint('[NOTIFICATION_SERVICE] Stored user id: $userId');
+
+    if (token == null || token.isEmpty) {
+      throw const NotificationServiceException('No active session found.');
+    }
 
     if (userId == null || userId <= 0) {
       throw const NotificationServiceException('No active user found.');
     }
 
-    final socketUri = Uri.parse('$_socketBaseUrl/ws/notifications/$userId/');
+    final encodedToken = Uri.encodeComponent(token);
+    final socketUri = Uri.parse(
+      '$_socketBaseUrl/ws/notifications/$userId/?token=$encodedToken',
+    );
 
     debugPrint('[NOTIFICATION_SERVICE] Connecting socket: $socketUri');
 
     return WebSocketChannel.connect(socketUri);
+  }
+
+  static Future<void> markAsRead(int notificationId) async {
+    await _patchJson(
+      path: '/api/notifications/me/$notificationId/read/',
+      payload: {},
+      expectedStatusCode: 200,
+    );
   }
 
   static Future<List<AppNotificationModel>> getMyNotifications() async {
@@ -85,20 +101,44 @@ class NotificationService {
       expectedStatusCode: 200,
     );
 
-    if (decoded is! List) {
-      throw const NotificationServiceException(
-        'Invalid notifications response from server.',
-      );
-    }
+    debugPrint('[NOTIFICATION_SERVICE] GET /me/ decoded: $decoded');
 
-    return decoded
-        .whereType<Map>()
+    final items = _extractNotificationList(decoded);
+    debugPrint(
+      '[NOTIFICATION_SERVICE] Parsed ${items.length} notification(s). '
+      'If 0 after a react in Postman, Django must call create_and_send_notification() '
+      'in the react view (see django_interactions_patches/POSTMAN_VERIFY_NOTIFICATIONS.md).',
+    );
+
+    return items
         .map(
           (item) => AppNotificationModel.fromJson(
             Map<String, dynamic>.from(item),
           ),
         )
         .toList();
+  }
+
+  /// DRF may return a bare list or a paginated `{ results: [...] }` payload.
+  static List<Map<dynamic, dynamic>> _extractNotificationList(dynamic decoded) {
+    if (decoded is List) {
+      return decoded.whereType<Map>().map(Map<dynamic, dynamic>.from).toList();
+    }
+
+    if (decoded is Map) {
+      final map = Map<String, dynamic>.from(decoded);
+
+      for (final key in ['results', 'data', 'notifications', 'items']) {
+        final nested = map[key];
+        if (nested is List) {
+          return nested.whereType<Map>().map(Map<dynamic, dynamic>.from).toList();
+        }
+      }
+    }
+
+    throw const NotificationServiceException(
+      'Invalid notifications response from server.',
+    );
   }
 
   static Future<int> getUnreadCount() async {
@@ -122,6 +162,26 @@ class NotificationService {
     );
   }
 
+  static Future<void> createNotification({
+    required int targetUserId,
+    required String title,
+    required String body,
+    required String type,
+    Map<String, dynamic>? data,
+  }) async {
+    await _postJson(
+      path: '/api/notifications/',
+      payload: {
+        'user': targetUserId,
+        'title': title,
+        'body': body,
+        'type': type,
+        if (data != null) 'data': data,
+      },
+      expectedStatusCode: 201,
+    );
+  }
+
   static Future<dynamic> _getJson({
     required String path,
     required int expectedStatusCode,
@@ -134,11 +194,64 @@ class NotificationService {
           .get(uri, headers: headers)
           .timeout(const Duration(seconds: 20));
 
+      debugPrint(
+        '[NOTIFICATION_SERVICE] GET $path → ${response.statusCode}',
+      );
+
       final decoded = _decodeBody(response.body);
 
       if (response.statusCode == expectedStatusCode) {
         return decoded;
       }
+
+      debugPrint('[NOTIFICATION_SERVICE] GET error body: ${response.body}');
+
+      throw NotificationServiceException(_extractErrorMessage(decoded));
+    } on TimeoutException {
+      throw const NotificationServiceException(
+        'The request took too long. Please try again.',
+      );
+    } on http.ClientException {
+      throw const NotificationServiceException(
+        'Unable to reach the server. Please make sure the backend is running.',
+      );
+    } catch (e) {
+      if (e is NotificationServiceException) rethrow;
+
+      throw const NotificationServiceException(
+        'Something went wrong. Please try again.',
+      );
+    }
+  }
+
+  static Future<dynamic> _postJson({
+    required String path,
+    required Map<String, dynamic> payload,
+    required int expectedStatusCode,
+  }) async {
+    try {
+      final uri = _uri(path);
+      final headers = await _authHeaders();
+
+      final response = await http
+          .post(
+            uri,
+            headers: headers,
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      final decoded = _decodeBody(response.body);
+
+      debugPrint(
+        '[NOTIFICATION_SERVICE] POST $path → ${response.statusCode}',
+      );
+
+      if (response.statusCode == expectedStatusCode) {
+        return decoded;
+      }
+
+      debugPrint('[NOTIFICATION_SERVICE] POST error body: ${response.body}');
 
       throw NotificationServiceException(_extractErrorMessage(decoded));
     } on TimeoutException {

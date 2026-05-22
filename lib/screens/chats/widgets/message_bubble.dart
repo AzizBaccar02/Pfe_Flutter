@@ -9,6 +9,9 @@ class MessageBubble extends StatelessWidget {
   final bool isDarkMode;
   final bool isMine;
   final String avatarInitials;
+  /// Resolved absolute URL for the peer's profile photo (incoming rows only).
+  final String? avatarPhotoUrl;
+  final VoidCallback? onAvatarTap;
   final VoidCallback? onLongPress;
 
   const MessageBubble({
@@ -17,14 +20,16 @@ class MessageBubble extends StatelessWidget {
     required this.isDarkMode,
     required this.isMine,
     required this.avatarInitials,
+    this.avatarPhotoUrl,
+    this.onAvatarTap,
     this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     final bubbleColor = isMine
-        ? (isDarkMode ? const Color(0xFF166534) : const Color(0xFFD9FDD3))
-        : (isDarkMode ? const Color(0xFF1F2937) : Colors.white);
+        ? (isDarkMode ? const Color(0xFF1A2E22) : const Color(0xFFD9FDD3))
+        : (isDarkMode ? const Color(0xFF1A1A1A) : Colors.white);
 
     final messageColor = isMine
         ? (isDarkMode ? Colors.white : const Color(0xFF173D24))
@@ -50,9 +55,14 @@ class MessageBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMine) ...[
-            _IncomingAvatar(
-              initials: avatarInitials,
-              isDarkMode: isDarkMode,
+            GestureDetector(
+              onTap: onAvatarTap,
+              behavior: HitTestBehavior.opaque,
+              child: _IncomingAvatar(
+                photoUrl: avatarPhotoUrl,
+                initials: avatarInitials,
+                isDarkMode: isDarkMode,
+              ),
             ),
             const SizedBox(width: 6),
           ],
@@ -129,36 +139,65 @@ class MessageBubble extends StatelessWidget {
   }
 
   static String _formatTime(DateTime date) {
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    final local = date.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $suffix';
   }
 }
 
 class _IncomingAvatar extends StatelessWidget {
+  final String? photoUrl;
   final String initials;
   final bool isDarkMode;
 
   const _IncomingAvatar({
+    this.photoUrl,
     required this.initials,
     required this.isDarkMode,
   });
 
   @override
   Widget build(BuildContext context) {
-    return CircleAvatar(
-      radius: 10,
-      backgroundColor:
-          isDarkMode ? const Color(0xFF374151) : const Color(0xFFE5E7EB),
-      child: Text(
+    const radius = 10.0;
+    final diameter = radius * 2;
+    final baseBg =
+        isDarkMode ? const Color(0xFF374151) : const Color(0xFFE5E7EB);
+    final resolved = photoUrl?.trim();
+
+    Widget letter() {
+      return Text(
         initials.isNotEmpty ? initials.substring(0, 1) : '?',
         style: TextStyle(
           color: isDarkMode ? Colors.white : const Color(0xFF4B5563),
           fontSize: 8,
           fontWeight: FontWeight.w800,
         ),
-      ),
+      );
+    }
+
+    if (resolved != null && resolved.isNotEmpty) {
+      return ClipOval(
+        child: Container(
+          width: diameter,
+          height: diameter,
+          color: baseBg,
+          child: Image.network(
+            resolved,
+            width: diameter,
+            height: diameter,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Center(child: letter()),
+          ),
+        ),
+      );
+    }
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: baseBg,
+      child: letter(),
     );
   }
 }

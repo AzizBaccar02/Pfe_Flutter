@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../conf/theme_provider.dart';
-import '../../../models/agent_public_offer_model.dart';
+import '../../../models/offer_interaction_model.dart';
 import '../../../services/interaction_service.dart';
+import '../../../services/offer_reaction_service.dart';
 import '../../../services/offer_service.dart';
-import '../../subscription/widgets/usage_limit_dialog.dart';
 import '../widgets/offer_swipe_card.dart';
 
 class AgentOffersScreen extends StatefulWidget {
@@ -24,7 +24,59 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
 
   Offset _dragOffset = Offset.zero;
 
-  bool get _isEmpty => _offers.isEmpty;
+  bool get _isEmpty => !_isLoading && _offers.isEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOffers();
+  }
+
+  Future<void> _loadOffers() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+
+    try {
+      final remote = await OfferService.getBrowseOffers();
+      if (!mounted) return;
+
+      setState(() {
+        _offers = remote.isNotEmpty
+            ? remote.map(_mapBrowseOffer).toList()
+            : List<SwipeOfferCardData>.from(_fallbackOffers);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _offers = List<SwipeOfferCardData>.from(_fallbackOffers);
+        _loadError = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  SwipeOfferCardData _mapBrowseOffer(BrowseOfferModel offer) {
+    return SwipeOfferCardData(
+      id: offer.id,
+      clientUserId: offer.clientUserId,
+      title: offer.title,
+      category: offer.category,
+      city: offer.city,
+      budget: offer.budgetLabel,
+      clientName: offer.clientName,
+      description: offer.description,
+      imageUrls: offer.imageUrls
+          .map(OfferService.resolveImageUrl)
+          .where((url) => url.isNotEmpty)
+          .toList(),
+      skills: const ['Service', 'Professional'],
+      highlights: const ['Open offer', 'Client verified'],
+    );
+  }
 
   @override
   void initState() {
@@ -559,7 +611,17 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
       body: SafeArea(
         top: false,
         bottom: false,
-        child: SizedBox.expand(child: body),
+        child: SizedBox.expand(
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF22C55E),
+                  ),
+                )
+              : _isEmpty
+                  ? _buildEmptyState(isDarkMode)
+                  : _buildDeck(isDarkMode),
+        ),
       ),
     );
   }

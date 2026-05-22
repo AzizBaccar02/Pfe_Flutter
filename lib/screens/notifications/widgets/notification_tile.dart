@@ -18,7 +18,7 @@ class NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = AppColors.accent;
+    const accentGreen = Color(0xFF22C55E);
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -37,7 +37,7 @@ class NotificationTile extends StatelessWidget {
         ? (isDarkMode
             ? Colors.white.withOpacity(0.06)
             : Colors.black.withOpacity(0.06))
-        : accent.withOpacity(isDarkMode ? 0.18 : 0.24);
+        : accentGreen.withOpacity(isDarkMode ? 0.18 : 0.24);
 
     return InkWell(
       onTap: onTap,
@@ -56,7 +56,7 @@ class NotificationTile extends StatelessWidget {
               width: 46,
               height: 46,
               decoration: BoxDecoration(
-                color: accent.withOpacity(isDarkMode ? 0.10 : 0.14),
+                color: accentGreen.withOpacity(isDarkMode ? 0.10 : 0.14),
                 borderRadius: BorderRadius.circular(15),
               ),
               child: Center(
@@ -115,11 +115,11 @@ class NotificationTile extends StatelessWidget {
                 height: 10,
                 margin: const EdgeInsets.only(top: 5),
                 decoration: BoxDecoration(
-                  color: accent,
+                  color: accentGreen,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: accent.withOpacity(0.34),
+                      color: accentGreen.withOpacity(0.34),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -138,6 +138,10 @@ class NotificationTile extends StatelessWidget {
         return HugeIcons.strokeRoundedMessage02;
       case AppNotificationType.match:
         return HugeIcons.strokeRoundedFavourite;
+      case AppNotificationType.agentLikedOffer:
+        return HugeIcons.strokeRoundedUserLove01;
+      case AppNotificationType.clientRejected:
+        return HugeIcons.strokeRoundedCancel01;
       case AppNotificationType.offer:
         return HugeIcons.strokeRoundedWork;
       case AppNotificationType.system:

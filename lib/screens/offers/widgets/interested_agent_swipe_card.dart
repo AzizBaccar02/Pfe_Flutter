@@ -58,12 +58,105 @@ class InterestedAgentSwipeCard extends StatelessWidget {
           ],
         ),
       ),
-      child: Center(
-        child: HugeIcon(
-          icon: HugeIcons.strokeRoundedUser,
-          color: Colors.white70,
-          size: 46,
-        ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            agent.imageUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) {
+              return Container(
+                color: isDarkMode
+                    ? const Color(0xFF1C1C1C)
+                    : const Color(0xFFEDEDED),
+                child: Center(
+                  child: HugeIcon(
+                    icon: HugeIcons.strokeRoundedUser,
+                    color: isDarkMode
+                        ? Colors.white.withOpacity(0.72)
+                        : Colors.black.withOpacity(0.72),
+                    size: 42,
+                  ),
+                ),
+              );
+            },
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.04),
+                  Colors.black.withOpacity(0.10),
+                  Colors.black.withOpacity(0.42),
+                  Colors.black.withOpacity(0.88),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 18,
+            child: _CardCircleIconButton(
+              onTap: onInfoTap,
+              isDarkMode: true,
+              compact: true,
+              child: Transform.rotate(
+                angle: math.pi,
+                child: const HugeIcon(
+                  icon: HugeIcons.strokeRoundedArrowLeft01,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 18,
+            right: 78,
+            bottom: 18,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  agent.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  agent.jobTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.90),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  agent.city,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.82),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -110,27 +203,48 @@ class InterestedAgentSwipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final actionBackground =
-        isDarkMode ? const Color(0xFF1A1A1A) : Colors.white;
-
-    final shadowColor = isDarkMode
-        ? Colors.black.withValues(alpha: 0.35)
-        : Colors.black.withValues(alpha: 0.10);
-
-    final actionAreaBackground = isDarkMode ? Colors.black : Colors.white;
-
-    return SizedBox.expand(
-      child: Column(
-        children: [
-          Expanded(
-            child: ClipRRect(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    clipBehavior: Clip.hardEdge,
-                    children: [
-                      Positioned.fill(
-                        child: _buildImage(agent.imageUrl),
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: isDarkMode ? const Color(0xFF141414) : const Color(0xFFF2F2F2),
+          borderRadius: BorderRadius.circular(34),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              agent.imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) {
+                return Container(
+                  color: isDarkMode
+                      ? const Color(0xFF1C1C1C)
+                      : const Color(0xFFEDEDED),
+                );
+              },
+            ),
+            Container(
+              color: Colors.black.withOpacity(0.42),
+            ),
+            Positioned(
+              left: 18,
+              right: 18,
+              bottom: 18,
+              child: Opacity(
+                opacity: opacity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      agent.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
                       ),
 
                       /// Swipe feedback color overlay.

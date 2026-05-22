@@ -1,27 +1,27 @@
 // lib/screens/notifications/widgets/app_notification_listener.dart
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
-import 'package:provider/provider.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
-import '../../../conf/theme_provider.dart';
 import '../../../models/app_notification_model.dart';
-import '../../../services/notification_service.dart';
+import '../../../models/interested_agent_model.dart';
+import '../../../services/notification_realtime_hub.dart';
+import '../../../services/notification_router.dart';
 
 class AppNotificationListener extends StatefulWidget {
   final Widget child;
   final ValueChanged<int>? onUnreadCountChanged;
   final VoidCallback? onOpenNotifications;
+  final ValueChanged<InterestedAgentModel>? onAgentAccepted;
 
   const AppNotificationListener({
     super.key,
     required this.child,
     this.onUnreadCountChanged,
     this.onOpenNotifications,
+    this.onAgentAccepted,
   });
 
   @override
@@ -30,13 +30,13 @@ class AppNotificationListener extends StatefulWidget {
 }
 
 class _AppNotificationListenerState extends State<AppNotificationListener> {
-  WebSocketChannel? _channel;
-  StreamSubscription<dynamic>? _subscription;
+  final NotificationRealtimeHub _hub = NotificationRealtimeHub.instance;
+
+  StreamSubscription<AppNotificationModel>? _notificationSubscription;
+  StreamSubscription<int>? _unreadSubscription;
   Timer? _hideTimer;
 
-  int _unreadCount = 0;
   bool _isBannerVisible = false;
-
   AppNotificationModel? _latestNotification;
 
   @override
@@ -48,88 +48,35 @@ class _AppNotificationListenerState extends State<AppNotificationListener> {
   @override
   void dispose() {
     _hideTimer?.cancel();
-    _subscription?.cancel();
-    _channel?.sink.close();
+    _notificationSubscription?.cancel();
+    _unreadSubscription?.cancel();
     super.dispose();
   }
 
   Future<void> _bootstrapNotifications() async {
-    await _syncUnreadCount();
-    await _connectSocket();
-  }
+    await _hub.ensureStarted();
 
-  Future<void> _syncUnreadCount() async {
-    try {
-      final count = await NotificationService.getUnreadCount();
+    if (!mounted) return;
 
+    _unreadSubscription = _hub.onUnreadCountChanged.listen((count) {
       if (!mounted) return;
-
-      setState(() {
-        _unreadCount = count;
-      });
 
       widget.onUnreadCountChanged?.call(count);
-    } catch (_) {
-      // Silent sync should never disturb the current screen.
-    }
-  }
+    });
 
-  Future<void> _connectSocket() async {
-    try {
-      await _subscription?.cancel();
-      await _channel?.sink.close();
-
-      final channel = await NotificationService.connectToNotificationSocket();
-
-      _channel = channel;
-
-      _subscription = channel.stream.listen(
-        _handleSocketEvent,
-        onError: (_) {},
-        onDone: () {},
-        cancelOnError: false,
-      );
-    } catch (_) {
-      // Keep app usable if notifications socket is unavailable.
-    }
-  }
-
-  void _handleSocketEvent(dynamic event) {
-    try {
-      final decoded = event is String ? jsonDecode(event) : event;
-
-      if (decoded is! Map) return;
-
-      final data = Map<String, dynamic>.from(decoded);
-      final type = data['type']?.toString();
-
-      if (type != 'new_notification') return;
-
-      final rawNotification = data['notification'];
-
-      if (rawNotification is! Map) return;
-
-      final notification = AppNotificationModel.fromJson(
-        Map<String, dynamic>.from(rawNotification),
-      );
-
-      if (!mounted) return;
-
-      final nextCount = _unreadCount + 1;
+    _notificationSubscription = _hub.onNotification.listen((notification) {
+      if (!mounted || _hub.isInboxOpen) return;
 
       setState(() {
-        _unreadCount = nextCount;
         _latestNotification = notification;
         _isBannerVisible = true;
       });
 
-      widget.onUnreadCountChanged?.call(nextCount);
-
       _hideTimer?.cancel();
       _hideTimer = Timer(const Duration(seconds: 5), _hideBanner);
-    } catch (e) {
-      debugPrint('[NOTIFICATION_SOCKET] Invalid event: $e');
-    }
+    });
+
+    widget.onUnreadCountChanged?.call(_hub.unreadCount);
   }
 
   void _hideBanner() {
@@ -142,8 +89,20 @@ class _AppNotificationListenerState extends State<AppNotificationListener> {
     });
   }
 
-  void _openNotifications() {
+  Future<void> _openNotification(AppNotificationModel notification) async {
     _hideBanner();
+
+    if (notification.isActionable) {
+      final acceptedAgent =
+          await NotificationRouter.handle(context, notification);
+
+      if (acceptedAgent != null) {
+        widget.onAgentAccepted?.call(acceptedAgent);
+      }
+
+      return;
+    }
+
     widget.onOpenNotifications?.call();
   }
 
@@ -173,7 +132,7 @@ class _AppNotificationListenerState extends State<AppNotificationListener> {
                     ? const SizedBox.shrink()
                     : _NotificationBanner(
                         notification: notification,
-                        onTap: _openNotifications,
+                        onTap: () => _openNotification(notification),
                         onClose: _hideBanner,
                       ),
               ),
@@ -199,18 +158,9 @@ class _NotificationBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const accentGreen = Color(0xFF22C55E);
-
-    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
-
-    final backgroundColor =
-        isDarkMode ? const Color(0xFF111827) : Colors.white;
-
-    final primaryTextColor =
-        isDarkMode ? Colors.white : const Color(0xFF111827);
-
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.62)
-        : Colors.black.withOpacity(0.56);
+    const backgroundColor = Color(0xFF141414);
+    const primaryTextColor = Colors.white;
+    const secondaryTextColor = Color(0xFF9CA3AF);
 
     return Material(
       color: Colors.transparent,
@@ -223,11 +173,11 @@ class _NotificationBanner extends StatelessWidget {
             color: backgroundColor,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: accentGreen.withOpacity(isDarkMode ? 0.24 : 0.18),
+              color: accentGreen.withOpacity(0.24),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(isDarkMode ? 0.32 : 0.12),
+                color: Colors.black.withOpacity(0.45),
                 blurRadius: 28,
                 offset: const Offset(0, 14),
               ),
@@ -239,7 +189,7 @@ class _NotificationBanner extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: accentGreen.withOpacity(isDarkMode ? 0.16 : 0.10),
+                  color: accentGreen.withOpacity(0.14),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Center(
@@ -289,9 +239,7 @@ class _NotificationBanner extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: isDarkMode
-                        ? Colors.white.withOpacity(0.06)
-                        : Colors.black.withOpacity(0.05),
+                    color: Colors.white.withOpacity(0.08),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
