@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class HomeStatCard extends StatelessWidget {
@@ -17,14 +19,14 @@ class HomeStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
 
     final backgroundColor =
         isDarkMode ? const Color(0xFF141414) : const Color(0xFFF8F8F8);
 
     final borderColor = isDarkMode
-        ? accentYellow.withOpacity(0.10)
-        : accentYellow.withOpacity(0.16);
+        ? accent.withOpacity(0.10)
+        : accent.withOpacity(0.16);
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -56,7 +58,7 @@ class HomeStatCard extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: accentYellow.withOpacity(isDarkMode ? 0.10 : 0.14),
+              color: accent.withOpacity(isDarkMode ? 0.10 : 0.14),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Center(

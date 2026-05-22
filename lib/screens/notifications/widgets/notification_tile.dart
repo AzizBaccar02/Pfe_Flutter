@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_colors.dart';
 import '../../../models/app_notification_model.dart';
 
 class NotificationTile extends StatelessWidget {
@@ -17,7 +18,7 @@ class NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -30,13 +31,13 @@ class NotificationTile extends StatelessWidget {
 
     final cardColor = notification.isRead
         ? (isDarkMode ? const Color(0xFF141414) : const Color(0xFFF6F6F6))
-        : (isDarkMode ? const Color(0xFF181818) : const Color(0xFFFAF7EC));
+        : (isDarkMode ? const Color(0xFF181818) : AppColors.accentSurface);
 
     final borderColor = notification.isRead
         ? (isDarkMode
             ? Colors.white.withOpacity(0.06)
             : Colors.black.withOpacity(0.06))
-        : accentYellow.withOpacity(isDarkMode ? 0.18 : 0.24);
+        : accent.withOpacity(isDarkMode ? 0.18 : 0.24);
 
     return InkWell(
       onTap: onTap,
@@ -55,7 +56,7 @@ class NotificationTile extends StatelessWidget {
               width: 46,
               height: 46,
               decoration: BoxDecoration(
-                color: accentYellow.withOpacity(isDarkMode ? 0.10 : 0.14),
+                color: accent.withOpacity(isDarkMode ? 0.10 : 0.14),
                 borderRadius: BorderRadius.circular(15),
               ),
               child: Center(
@@ -114,11 +115,11 @@ class NotificationTile extends StatelessWidget {
                 height: 10,
                 margin: const EdgeInsets.only(top: 5),
                 decoration: BoxDecoration(
-                  color: accentYellow,
+                  color: accent,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: accentYellow.withOpacity(0.34),
+                      color: accent.withOpacity(0.34),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),

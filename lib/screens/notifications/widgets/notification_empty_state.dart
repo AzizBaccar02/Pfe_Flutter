@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_colors.dart';
+
 class NotificationEmptyState extends StatelessWidget {
   final bool isDarkMode;
 
@@ -11,7 +13,7 @@ class NotificationEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -39,7 +41,7 @@ class NotificationEmptyState extends StatelessWidget {
                 width: 72,
                 height: 72,
                 decoration: BoxDecoration(
-                  color: accentYellow.withOpacity(isDarkMode ? 0.10 : 0.14),
+                  color: accent.withValues(alpha: isDarkMode ? 0.10 : 0.14),
                   borderRadius: BorderRadius.circular(22),
                 ),
                 child: Center(

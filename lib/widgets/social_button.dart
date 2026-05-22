@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../conf/app_colors.dart';
+
 class SocialButton extends StatelessWidget {
   final String? label;
   final String? text;
@@ -22,8 +24,8 @@ class SocialButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowDeep = Color(0xFF5D4200);
+    const accent = AppColors.accent;
+    const accentDeep = AppColors.accentDeep;
 
     final displayLabel = label ?? text ?? '';
     final action = onTap ?? onPressed;
@@ -38,7 +40,7 @@ class SocialButton extends StatelessWidget {
     final textColor = isDarkMode ? Colors.white : Colors.black;
 
     final iconContainerColor = backgroundColor ??
-        accentYellow.withOpacity(isDarkMode ? 0.12 : 0.16);
+        accent.withValues(alpha: isDarkMode ? 0.12 : 0.16);
 
     Widget resolvedIcon;
     if (icon is Widget) {
@@ -46,7 +48,7 @@ class SocialButton extends StatelessWidget {
     } else if (icon is IconData) {
       resolvedIcon = Icon(
         icon as IconData,
-        color: accentYellowDeep,
+        color: accentDeep,
         size: 18,
       );
     } else {

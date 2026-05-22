@@ -4,11 +4,13 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../models/agent_public_offer_model.dart';
 import '../models/client_offer_model.dart';
 import 'auth_service.dart';
 
 class OfferService {
   static const String _clientOffersPath = '/api/offers/client/offers/';
+  static const String _agentOffersPath = '/api/offers/agent/offers/';
 
   static Future<List<ClientOfferModel>> fetchMyOffers() async {
     final response = await _authorizedRequest(
@@ -33,6 +35,33 @@ class OfferService {
     return decoded
         .whereType<Map<String, dynamic>>()
         .map(ClientOfferModel.fromJson)
+        .toList();
+  }
+
+  static Future<List<AgentPublicOfferModel>> fetchAgentOffers() async {
+    final response = await _authorizedRequest(
+      requestBuilder: (headers) {
+        return http.get(
+          AuthService.apiUri(_agentOffersPath),
+          headers: headers,
+        );
+      },
+    );
+
+    final decoded = _decodeResponse(response);
+
+    if (response.statusCode != 200) {
+      throw OfferException(_extractErrorMessage(decoded));
+    }
+
+    if (decoded is! List) {
+      throw const OfferException('Invalid offers response from server.');
+    }
+
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(AgentPublicOfferModel.fromJson)
+        .where((o) => o.id > 0)
         .toList();
   }
 

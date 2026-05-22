@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../conf/app_colors.dart';
 import '../../../conf/user_profile_provider.dart';
 import '../../../models/client_profile_model.dart';
 import '../../../services/auth_service.dart';
@@ -15,6 +16,7 @@ import '../../settings/appearance_screen.dart';
 import '../../settings/help_support_screen.dart';
 import '../../settings/privacy_security_screen.dart';
 import '../../settings/settings_screen.dart';
+import '../../subscription/subscription_hub_screen.dart';
 import 'offers_drawer_item.dart';
 
 class OffersDrawer extends StatefulWidget {
@@ -102,7 +104,7 @@ class _OffersDrawerState extends State<OffersDrawer> {
       return Image.network(
         remoteUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _emptyAvatar(),
+        errorBuilder: (context, error, stackTrace) => _emptyAvatar(),
       );
     }
 
@@ -110,7 +112,7 @@ class _OffersDrawerState extends State<OffersDrawer> {
       return Image.file(
         File(localPath),
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _emptyAvatar(),
+        errorBuilder: (context, error, stackTrace) => _emptyAvatar(),
       );
     }
 
@@ -188,6 +190,16 @@ class _OffersDrawerState extends State<OffersDrawer> {
     );
   }
 
+  void _openSubscription() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SubscriptionHubScreen(isAgent: false),
+      ),
+    );
+  }
+
   Future<void> _handleLogout(BuildContext context) async {
     final shouldLogout = await showDialog<bool>(
       context: context,
@@ -247,6 +259,7 @@ class _OffersDrawerState extends State<OffersDrawer> {
     if (shouldLogout != true || !context.mounted) return;
 
     await AuthService.clearLoginSession();
+    if (!context.mounted) return;
     context.read<UserProfileProvider>().clearProfileImage();
 
     if (!context.mounted) return;
@@ -419,6 +432,14 @@ class _OffersDrawerState extends State<OffersDrawer> {
                         title: 'Chats',
                         isDarkMode: widget.isDarkMode,
                         onTap: () => _closeDrawerAndRun(widget.onChatsTap),
+                      ),
+                      _sectionLabel('Subscription'),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedWallet02,
+                        title: 'Subscription',
+                        isDarkMode: widget.isDarkMode,
+                        color: AppColors.accent,
+                        onTap: _openSubscription,
                       ),
                       _sectionLabel('Preferences'),
                       OffersDrawerItem(

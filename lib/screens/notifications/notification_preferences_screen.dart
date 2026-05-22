@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../conf/app_colors.dart';
 import '../../conf/theme_provider.dart';
 import '../settings/widgets/settings_section_title.dart';
 import '../settings/widgets/settings_switch_tile.dart';
@@ -25,7 +26,7 @@ class _NotificationPreferencesScreenState
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
     final cardColor =
@@ -86,7 +87,7 @@ class _NotificationPreferencesScreenState
                       width: 50,
                       height: 50,
                       decoration: BoxDecoration(
-                        color: accentYellow.withOpacity(isDarkMode ? 0.10 : 0.14),
+                        color: accent.withValues(alpha: isDarkMode ? 0.10 : 0.14),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Center(

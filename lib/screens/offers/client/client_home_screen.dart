@@ -132,6 +132,7 @@ class _ClientHomeScreenState extends State<ClientHomeScreen> {
     return Container(
       color: backgroundColor,
       child: RefreshIndicator(
+        color: const Color(0xFF22C55E),
         onRefresh: () => _loadHomeData(showLoader: false),
         child: SingleChildScrollView(
           controller: widget.scrollController,

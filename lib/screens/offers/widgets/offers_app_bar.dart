@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../conf/app_colors.dart';
 import '../../../conf/user_profile_provider.dart';
+import 'offers_app_bar_layout.dart';
 
 class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool isDarkMode;
@@ -21,16 +23,16 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => const Size.fromHeight(OffersAppBarLayout.height);
 
   Widget _emptyAvatar() {
     return Center(
       child: HugeIcon(
         icon: HugeIcons.strokeRoundedUser,
         color: isDarkMode
-            ? Colors.white.withOpacity(0.7)
-            : Colors.black.withOpacity(0.7),
-        size: 16,
+            ? Colors.white.withValues(alpha: 0.7)
+            : Colors.black.withValues(alpha: 0.7),
+        size: OffersAppBarLayout.iconSize,
       ),
     );
   }
@@ -63,33 +65,38 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
     final profileProvider = Provider.of<UserProfileProvider>(context);
 
     return AppBar(
+      toolbarHeight: OffersAppBarLayout.height,
       backgroundColor: backgroundColor,
       elevation: 0,
+      scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
       automaticallyImplyLeading: false,
-      leadingWidth: 74,
+      leadingWidth: OffersAppBarLayout.actionSize +
+          OffersAppBarLayout.horizontalPadding,
       leading: Padding(
-        padding: const EdgeInsets.only(left: 16),
+        padding: const EdgeInsets.only(
+          left: OffersAppBarLayout.horizontalPadding,
+        ),
         child: GestureDetector(
           onTap: onProfileTap,
           child: Container(
-            height: 42,
-            width: 42,
+            height: OffersAppBarLayout.avatarOuter,
+            width: OffersAppBarLayout.avatarOuter,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: isDarkMode
-                  ? Colors.white.withOpacity(0.08)
-                  : Colors.black.withOpacity(0.08),
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
             ),
             child: Center(
               child: Container(
-                height: 32,
-                width: 32,
+                height: OffersAppBarLayout.avatarInner,
+                width: OffersAppBarLayout.avatarInner,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: isDarkMode
-                      ? Colors.white.withOpacity(0.06)
-                      : Colors.black.withOpacity(0.06),
+                      ? Colors.white.withValues(alpha: 0.06)
+                      : Colors.black.withValues(alpha: 0.06),
                 ),
                 child: ClipOval(
                   child: _buildProfileImage(profileProvider),
@@ -101,28 +108,30 @@ class OffersAppBar extends StatelessWidget implements PreferredSizeWidget {
       ),
       actions: [
         Padding(
-          padding: const EdgeInsets.only(right: 16),
+          padding: const EdgeInsets.only(
+            right: OffersAppBarLayout.horizontalPadding,
+          ),
           child: GestureDetector(
             onTap: onNotificationTap,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
                 Container(
-                  height: 42,
-                  width: 42,
+                  height: OffersAppBarLayout.actionSize,
+                  width: OffersAppBarLayout.actionSize,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: isDarkMode
-                        ? Colors.white.withOpacity(0.08)
-                        : Colors.black.withOpacity(0.08),
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.08),
                   ),
                   child: Center(
                     child: HugeIcon(
                       icon: HugeIcons.strokeRoundedNotification01,
                       color: isDarkMode
-                          ? Colors.white.withOpacity(0.7)
-                          : Colors.black.withOpacity(0.7),
-                      size: 18,
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : Colors.black.withValues(alpha: 0.7),
+                      size: OffersAppBarLayout.iconSize,
                     ),
                   ),
                 ),
@@ -155,16 +164,14 @@ class _NotificationBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
-
     return Container(
       constraints: const BoxConstraints(
-        minWidth: 18,
-        minHeight: 18,
+        minWidth: 20,
+        minHeight: 20,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 5),
       decoration: BoxDecoration(
-        color: accentGreen,
+        color: AppColors.accent,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(
           color: borderColor,
@@ -176,7 +183,7 @@ class _NotificationBadge extends StatelessWidget {
         count > 99 ? '99+' : '$count',
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 9.5,
+          fontSize: 10,
           height: 1,
           fontWeight: FontWeight.w900,
         ),
