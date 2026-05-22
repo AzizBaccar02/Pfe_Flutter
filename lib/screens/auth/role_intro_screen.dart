@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../conf/app_colors.dart';
 import 'login_screen.dart';
 import 'signup_screen.dart';
 
@@ -79,7 +80,7 @@ class RoleIntroScreen extends StatelessWidget {
                     width: 54,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF14A800),
+                      color: AppColors.accent,
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
@@ -122,7 +123,7 @@ class RoleIntroScreen extends StatelessWidget {
                         );
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF14A800),
+                        backgroundColor: AppColors.accent,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(

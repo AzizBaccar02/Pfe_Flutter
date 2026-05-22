@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_colors.dart';
+
 class NotificationEmptyState extends StatelessWidget {
   final bool isDarkMode;
 

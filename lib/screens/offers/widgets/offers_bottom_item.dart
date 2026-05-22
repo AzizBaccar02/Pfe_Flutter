@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class OffersBottomItem extends StatelessWidget {
@@ -21,7 +23,7 @@ class OffersBottomItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
 
     final activeColor = isDarkMode ? Colors.white : Colors.black;
     final inactiveColor =
@@ -31,12 +33,12 @@ class OffersBottomItem extends StatelessWidget {
 
     final background = selected
         ? (isDarkMode
-            ? accentYellow.withOpacity(0.10)
-            : accentYellow.withOpacity(0.14))
+            ? accent.withOpacity(0.10)
+            : accent.withOpacity(0.14))
         : Colors.transparent;
 
     final borderColor = selected
-        ? accentYellow.withOpacity(isDarkMode ? 0.28 : 0.34)
+        ? accent.withOpacity(isDarkMode ? 0.28 : 0.34)
         : Colors.transparent;
 
     return GestureDetector(
@@ -69,11 +71,11 @@ class OffersBottomItem extends StatelessWidget {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
-                        color: accentYellow,
+                        color: accent,
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: accentYellow.withOpacity(0.35),
+                            color: accent.withOpacity(0.35),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),

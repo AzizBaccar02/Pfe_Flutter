@@ -2,10 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../../models/client_offer_model.dart';
 import 'home_info_pill.dart';
 
 class HomeRecentOfferCard extends StatelessWidget {
-  final dynamic offer;
+  final ClientOfferModel offer;
   final bool isDarkMode;
 
   const HomeRecentOfferCard({
@@ -20,8 +21,8 @@ class HomeRecentOfferCard extends StatelessWidget {
         isDarkMode ? const Color(0xFF161616) : const Color(0xFFF3F3F3);
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.68)
-        : Colors.black.withOpacity(0.68);
+        ? Colors.white.withValues(alpha: 0.68)
+        : Colors.black.withValues(alpha: 0.68);
 
     final hasImage = offer.images.isNotEmpty;
     final imagePath = hasImage ? offer.images.first : null;
@@ -34,8 +35,8 @@ class HomeRecentOfferCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
           color: isDarkMode
-              ? Colors.white.withOpacity(0.04)
-              : Colors.black.withOpacity(0.04),
+              ? Colors.white.withValues(alpha: 0.04)
+              : Colors.black.withValues(alpha: 0.04),
         ),
       ),
       child: Column(
@@ -49,15 +50,10 @@ class HomeRecentOfferCard extends StatelessWidget {
               child: SizedBox(
                 height: 177,
                 width: double.infinity,
-                child: imagePath!.startsWith('assets/')
-                    ? Image.asset(
-                        imagePath,
-                        fit: BoxFit.cover,
-                      )
-                    : Image.file(
-                        File(imagePath),
-                        fit: BoxFit.cover,
-                      ),
+                child: _RecentOfferImage(
+                  imagePath: imagePath!,
+                  isDarkMode: isDarkMode,
+                ),
               ),
             ),
           Padding(
@@ -91,14 +87,16 @@ class HomeRecentOfferCard extends StatelessWidget {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    HomeInfoPill(
-                      text: offer.category,
-                      isDarkMode: isDarkMode,
-                    ),
-                    HomeInfoPill(
-                      text: offer.city,
-                      isDarkMode: isDarkMode,
-                    ),
+                    if (offer.category.trim().isNotEmpty)
+                      HomeInfoPill(
+                        text: offer.category,
+                        isDarkMode: isDarkMode,
+                      ),
+                    if (offer.city.trim().isNotEmpty)
+                      HomeInfoPill(
+                        text: offer.city,
+                        isDarkMode: isDarkMode,
+                      ),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -127,6 +125,85 @@ class HomeRecentOfferCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RecentOfferImage extends StatelessWidget {
+  final String imagePath;
+  final bool isDarkMode;
+
+  const _RecentOfferImage({
+    required this.imagePath,
+    required this.isDarkMode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fallbackColor =
+        isDarkMode ? const Color(0xFF222222) : const Color(0xFFEAEAEA);
+
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return Image.network(
+        imagePath,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) {
+          return _ImageFallback(
+            color: fallbackColor,
+            isDarkMode: isDarkMode,
+          );
+        },
+      );
+    }
+
+    if (imagePath.startsWith('assets/')) {
+      return Image.asset(
+        imagePath,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) {
+          return _ImageFallback(
+            color: fallbackColor,
+            isDarkMode: isDarkMode,
+          );
+        },
+      );
+    }
+
+    return Image.file(
+      File(imagePath),
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) {
+        return _ImageFallback(
+          color: fallbackColor,
+          isDarkMode: isDarkMode,
+        );
+      },
+    );
+  }
+}
+
+class _ImageFallback extends StatelessWidget {
+  final Color color;
+  final bool isDarkMode;
+
+  const _ImageFallback({
+    required this.color,
+    required this.isDarkMode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: color,
+      alignment: Alignment.center,
+      child: Text(
+        'Image unavailable',
+        style: TextStyle(
+          color: isDarkMode ? Colors.white54 : Colors.black45,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

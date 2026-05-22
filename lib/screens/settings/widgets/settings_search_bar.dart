@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class SettingsSearchBar extends StatelessWidget {
@@ -15,7 +17,7 @@ class SettingsSearchBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
 
     final backgroundColor =
         isDarkMode ? const Color(0xFF151515) : const Color(0xFFF7F7F7);
@@ -69,7 +71,7 @@ class SettingsSearchBar extends StatelessWidget {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: accentYellow.withOpacity(isDarkMode ? 0.10 : 0.14),
+                  color: accent.withValues(alpha: isDarkMode ? 0.10 : 0.14),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Center(

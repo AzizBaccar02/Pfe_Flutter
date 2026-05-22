@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_colors.dart';
+
 class SettingsTile extends StatelessWidget {
   final bool isDarkMode;
   final String title;
@@ -23,7 +25,7 @@ class SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
+    const accent = AppColors.accent;
     const dangerColor = Color(0xFFE53935);
 
     final neutralIconColor = isDarkMode
@@ -40,7 +42,7 @@ class SettingsTile extends StatelessWidget {
 
     final iconBackgroundColor = danger
         ? dangerColor.withOpacity(isDarkMode ? 0.12 : 0.14)
-        : accentYellow.withOpacity(isDarkMode ? 0.10 : 0.14);
+        : accent.withValues(alpha: isDarkMode ? 0.10 : 0.14);
 
     return InkWell(
       onTap: onTap,

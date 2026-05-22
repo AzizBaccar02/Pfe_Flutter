@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl_phone_number_input/intl_phone_number_input.dart';
 
+import '../conf/app_colors.dart';
+
 class PhoneTextField extends StatefulWidget {
   final TextEditingController controller;
   final bool isDarkMode;
@@ -38,8 +40,8 @@ class _PhoneTextFieldState extends State<PhoneTextField> {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowDeep = Color(0xFF5D4200);
+    const accent = AppColors.accent;
+    const accentDeep = AppColors.accentDeep;
 
     final fillColor =
         widget.isDarkMode ? const Color(0xFF151515) : const Color(0xFFF7F7F7);
@@ -119,7 +121,7 @@ class _PhoneTextFieldState extends State<PhoneTextField> {
               fontSize: 14.5,
               fontWeight: FontWeight.w500,
             ),
-            cursorColor: accentYellowDeep,
+            cursorColor: accentDeep,
             searchBoxDecoration: InputDecoration(
               hintText: 'Search country',
               hintStyle: TextStyle(
@@ -129,13 +131,13 @@ class _PhoneTextFieldState extends State<PhoneTextField> {
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(
-                  color: accentYellow.withOpacity(0.4),
+                  color: accent.withValues(alpha: 0.4),
                 ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: BorderSide(
-                  color: accentYellow.withOpacity(0.7),
+                  color: accent.withValues(alpha: 0.7),
                 ),
               ),
             ),

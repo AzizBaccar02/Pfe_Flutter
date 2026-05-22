@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../conf/app_colors.dart';
 import '../../../conf/theme_provider.dart';
 
 class AgentHomeScreen extends StatelessWidget {
@@ -38,14 +39,22 @@ class AgentHomeScreen extends StatelessWidget {
     const accentGreen = Color(0xFF22C55E);
     const accentPurple = Color(0xFF8B5CF6);
     const accentRed = Color(0xFFEF4444);
-    const accentYellowDark = Color(0xFFFACC15);
+    const accentBrand = AppColors.accent;
 
     return Container(
       color: backgroundColor,
-      child: ListView(
-        controller: scrollController,
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
-        children: [
+      child: RefreshIndicator(
+        color: AppColors.accent,
+        onRefresh: () async {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        },
+        child: ListView(
+          controller: scrollController,
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
+          children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -205,11 +214,11 @@ class AgentHomeScreen extends StatelessWidget {
                 label: 'Nearby',
                 icon: HugeIcons.strokeRoundedLocation01,
                 backgroundColor: isDarkMode
-                    ? accentYellowDark.withOpacity(0.16)
-                    : const Color(0xFFFFF7DB),
+                    ? accentBrand.withOpacity(0.16)
+                    : AppColors.accentSurface,
                 iconColor: isDarkMode
-                    ? accentYellowDark
-                    : const Color(0xFFD97706),
+                    ? accentBrand
+                    : AppColors.accentDark,
                 textColor: primaryTextColor,
                 borderColor: borderColor,
                 onTap: onBrowseOffersTap,
@@ -297,8 +306,8 @@ class AgentHomeScreen extends StatelessWidget {
                   title: 'Pending',
                   value: '06',
                   color: isDarkMode
-                      ? accentYellowDark
-                      : const Color(0xFFD97706),
+                      ? accentBrand
+                      : AppColors.accentDark,
                   cardColor: cardColor,
                   borderColor: borderColor,
                   primaryTextColor: primaryTextColor,
@@ -336,6 +345,7 @@ class AgentHomeScreen extends StatelessWidget {
             ],
           ),
         ],
+        ),
       ),
     );
   }

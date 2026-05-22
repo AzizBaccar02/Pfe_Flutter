@@ -8,14 +8,17 @@ import 'package:image_picker/image_picker.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../widgets/custom_text_field.dart';
 import '../../../widgets/primary_button.dart';
-import '../../../data/mock_client_data.dart';
+import '../../../services/offer_service.dart';
+import '../../subscription/widgets/usage_limit_dialog.dart';
 
 class CreateOfferScreen extends StatefulWidget {
   final VoidCallback? onBack;
-  
+  final VoidCallback? onCreated;
+
   const CreateOfferScreen({
     super.key,
     this.onBack,
+    this.onCreated,
   });
 
   @override
@@ -77,6 +80,8 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
 
   String? selectedCategory;
   String? selectedCity;
+
+  bool _isSubmitting = false;
 
   String? _validateTitle(String? value) {
     if (value == null || value.trim().isEmpty) {
@@ -147,7 +152,9 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
     return null;
   }
 
-  void _handleContinue() {
+  Future<void> _handleContinue() async {
+    if (_isSubmitting) return;
+
     final categoryError = _validateCategory();
     final cityError = _validateCity();
 
@@ -158,24 +165,67 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
       return;
     }
 
-    MockClientData.addOffer(
-      title: titleController.text.trim(),
-      description: descriptionController.text.trim(),
-      budget: double.parse(budgetController.text.trim()),
-      category: selectedCategory!,
-      city: selectedCity!,
-      address: addressController.text.trim(),
-      postalCode: postalCodeController.text.trim(),
-      images: _pickedImages.map((image) => image.path).toList(),
-    );
+    setState(() {
+      _isSubmitting = true;
+    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Offer created successfully'),
-      ),
-    );
+    try {
+      await OfferService.createOffer(
+        title: titleController.text.trim(),
+        description: descriptionController.text.trim(),
+        budget: double.parse(budgetController.text.trim()),
+        category: selectedCategory!,
+        city: selectedCity!,
+        address: addressController.text.trim(),
+        postalCode: postalCodeController.text.trim(),
+        imagePaths: _pickedImages.map((image) => image.path).toList(),
+      );
 
-    Navigator.pop(context);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Offer created successfully'),
+        ),
+      );
+
+      if (widget.onCreated != null) {
+        widget.onCreated!();
+      } else if (Navigator.of(context).canPop()) {
+        Navigator.pop(context, true);
+      }
+      
+    } on OfferException catch (e) {
+      if (!mounted) return;
+
+      if (UsageLimitDialog.isUsageLimitMessage(e.message)) {
+        await UsageLimitDialog.show(
+          context,
+          isAgent: false,
+          message: e.message,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Something went wrong. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
   }
 
   Future<void> _showImageSourceOptions() async {
@@ -1145,8 +1195,12 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
 
                 const SizedBox(height: 26),
                 PrimaryButton(
-                  text: 'Continue',
-                  onPressed: _handleContinue,
+                  text: _isSubmitting ? 'Creating...' : 'Continue',
+                  onPressed: _isSubmitting
+                      ? () {}
+                      : () {
+                          _handleContinue();
+                        },
                   isDarkMode: isDarkMode,
                 ),
               ],

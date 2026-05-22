@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
+import '../../conf/app_colors.dart';
 import '../../conf/theme_provider.dart';
 import '../../data/mock_notification_data.dart';
 import 'widgets/notification_empty_state.dart';

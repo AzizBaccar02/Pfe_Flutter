@@ -17,7 +17,7 @@ class AgentProfileModel {
     this.userId,
     required this.firstName,
     required this.lastName,
-    this.email = '',
+    required this.email,
     required this.phone,
     required this.photoUrl,
     required this.bio,
@@ -84,17 +84,17 @@ class AgentProfileModel {
             : '';
 
     return AgentProfileModel(
-      firstName:          (meJson['first_name'] ?? '').toString(),
-      lastName:           (meJson['last_name'] ?? '').toString(),
-      email:              (meJson['email'] ?? '').toString(),
-      phone:              (agentJson['phone'] ?? '').toString(),
-      photoUrl:           photoUrl,
-      bio:                (agentJson['bio'] ?? '').toString(),
-      skills:             (agentJson['skills'] ?? '').toString(),
-      hourlyRate:         double.tryParse(rawHourlyRate.toString()) ?? 0,
-      city:               (agentJson['city_value'] ?? '').toString(),
-      address:            (agentJson['address_value'] ?? '').toString(),
-      postalCode:         (agentJson['postal_code_value'] ?? '').toString(),
+      firstName: (meJson['first_name'] ?? '').toString(),
+      lastName: (meJson['last_name'] ?? '').toString(),
+      email: (meJson['email'] ?? '').toString(),
+      phone: (agentJson['phone'] ?? profile['phone'] ?? '').toString(),
+      photoUrl: (agentJson['photo'] ?? profile['photo'] ?? '').toString(),
+      bio: (agentJson['bio'] ?? profile['bio'] ?? '').toString(),
+      skills: (agentJson['skills'] ?? profile['skills'] ?? '').toString(),
+      hourlyRate: double.tryParse(rawHourlyRate.toString()) ?? 0,
+      city: (agentJson['city_value'] ?? '').toString(),
+      address: (agentJson['address_value'] ?? '').toString(),
+      postalCode: (agentJson['postal_code_value'] ?? '').toString(),
       isProfileCompleted: meJson['isProfileCompleted'] == true,
     );
   }

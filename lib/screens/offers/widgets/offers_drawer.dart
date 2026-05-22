@@ -4,27 +4,93 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../conf/app_colors.dart';
 import '../../../conf/user_profile_provider.dart';
-import '../../../data/mock_client_data.dart';
+import '../../../models/client_profile_model.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/profile_service.dart';
 import '../../auth/client/client_profile_screen.dart';
+import '../../auth/role_selection_screen.dart';
+import '../../notifications/notification_center_screen.dart';
+import '../../settings/appearance_screen.dart';
+import '../../settings/help_support_screen.dart';
+import '../../settings/privacy_security_screen.dart';
 import '../../settings/settings_screen.dart';
+import '../../subscription/subscription_hub_screen.dart';
 import 'offers_drawer_item.dart';
 
-class OffersDrawer extends StatelessWidget {
+class OffersDrawer extends StatefulWidget {
   final bool isDarkMode;
+  final VoidCallback onMyOffersTap;
+  final VoidCallback onCreateOfferTap;
+  final VoidCallback onInterestedTap;
+  final VoidCallback onChatsTap;
 
   const OffersDrawer({
     super.key,
     required this.isDarkMode,
+    required this.onMyOffersTap,
+    required this.onCreateOfferTap,
+    required this.onInterestedTap,
+    required this.onChatsTap,
   });
+
+  @override
+  State<OffersDrawer> createState() => _OffersDrawerState();
+}
+
+class _OffersDrawerState extends State<OffersDrawer> {
+  String _clientName = 'Client';
+  String _clientEmail = '';
+  bool _isLoadingProfile = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadClientProfile();
+  }
+
+  Future<void> _loadClientProfile() async {
+    try {
+      final ClientProfileModel profile =
+          await ProfileService.getClientProfile();
+
+      if (!mounted) return;
+
+      final profileProvider = context.read<UserProfileProvider>();
+      final remoteUrl = ProfileService.resolveMediaUrl(profile.photoUrl);
+
+      if (remoteUrl != null && remoteUrl.isNotEmpty) {
+        profileProvider.setRemoteProfileImageUrl(remoteUrl);
+      } else {
+        profileProvider.clearProfileImage();
+      }
+
+      setState(() {
+        _clientName = profile.fullName;
+        _clientEmail = profile.email.trim();
+        _isLoadingProfile = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      context.read<UserProfileProvider>().clearProfileImage();
+
+      setState(() {
+        _clientName = 'Client';
+        _clientEmail = '';
+        _isLoadingProfile = false;
+      });
+    }
+  }
 
   Widget _emptyAvatar() {
     return Center(
       child: HugeIcon(
         icon: HugeIcons.strokeRoundedUser,
-        color: isDarkMode
-            ? Colors.white.withOpacity(0.7)
-            : Colors.black.withOpacity(0.7),
+        color: widget.isDarkMode
+            ? Colors.white.withValues(alpha: 0.7)
+            : Colors.black.withValues(alpha: 0.7),
         size: 18,
       ),
     );
@@ -34,34 +100,211 @@ class OffersDrawer extends StatelessWidget {
     final localPath = profileProvider.localProfileImagePath;
     final remoteUrl = profileProvider.remoteProfileImageUrl;
 
-    if (localPath != null && localPath.isNotEmpty) {
-      return Image.file(
-        File(localPath),
-        fit: BoxFit.cover,
-      );
-    }
-
     if (remoteUrl != null && remoteUrl.isNotEmpty) {
       return Image.network(
         remoteUrl,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _emptyAvatar(),
+        errorBuilder: (context, error, stackTrace) => _emptyAvatar(),
+      );
+    }
+
+    if (localPath != null && localPath.isNotEmpty) {
+      return Image.file(
+        File(localPath),
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _emptyAvatar(),
       );
     }
 
     return _emptyAvatar();
   }
 
+  void _closeDrawerAndRun(VoidCallback action) {
+    Navigator.pop(context);
+    action();
+  }
+
+  void _openAccount() async {
+    Navigator.pop(context);
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const ClientProfileScreen(),
+      ),
+    );
+
+    if (!mounted) return;
+    _loadClientProfile();
+  }
+
+  void _openNotifications() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const NotificationCenterScreen(),
+      ),
+    );
+  }
+
+  void _openAppearance() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AppearanceScreen(),
+      ),
+    );
+  }
+
+  void _openPrivacySecurity() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PrivacySecurityScreen(),
+      ),
+    );
+  }
+
+  void _openHelpSupport() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const HelpSupportScreen(),
+      ),
+    );
+  }
+
+  void _openSettings() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SettingsScreen(
+          role: UserRoleType.client,
+        ),
+      ),
+    );
+  }
+
+  void _openSubscription() {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SubscriptionHubScreen(isAgent: false),
+      ),
+    );
+  }
+
+  Future<void> _handleLogout(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final dialogBackground =
+            widget.isDarkMode ? const Color(0xFF141414) : Colors.white;
+        final primaryTextColor = widget.isDarkMode ? Colors.white : Colors.black;
+        final secondaryTextColor = widget.isDarkMode
+            ? Colors.white.withValues(alpha: 0.62)
+            : Colors.black.withValues(alpha: 0.58);
+
+        return AlertDialog(
+          backgroundColor: dialogBackground,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Text(
+            'Logout',
+            style: TextStyle(
+              color: primaryTextColor,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          content: Text(
+            'Are you sure you want to logout from JobMatch?',
+            style: TextStyle(
+              color: secondaryTextColor,
+              height: 1.45,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  color: secondaryTextColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text(
+                'Logout',
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldLogout != true || !context.mounted) return;
+
+    await AuthService.clearLoginSession();
+    if (!context.mounted) return;
+    context.read<UserProfileProvider>().clearProfileImage();
+
+    if (!context.mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const RoleSelectionScreen(),
+      ),
+      (route) => false,
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    final color = widget.isDarkMode
+        ? Colors.white.withValues(alpha: 0.42)
+        : Colors.black.withValues(alpha: 0.42);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text.toUpperCase(),
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final backgroundColor =
-        isDarkMode ? const Color(0xFF0D0D0D) : Colors.white;
+        widget.isDarkMode ? const Color(0xFF0D0D0D) : Colors.white;
     final cardColor =
-        isDarkMode ? const Color(0xFF171717) : const Color(0xFFF0F0F0);
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.6)
-        : Colors.black.withOpacity(0.6);
+        widget.isDarkMode ? const Color(0xFF171717) : const Color(0xFFF0F0F0);
+    final primaryTextColor = widget.isDarkMode ? Colors.white : Colors.black;
+    final secondaryTextColor = widget.isDarkMode
+        ? Colors.white.withValues(alpha: 0.6)
+        : Colors.black.withValues(alpha: 0.6);
 
     final profileProvider = Provider.of<UserProfileProvider>(context);
 
@@ -74,15 +317,7 @@ class OffersDrawer extends StatelessWidget {
             children: [
               InkWell(
                 borderRadius: BorderRadius.circular(24),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ClientProfileScreen(),
-                    ),
-                  );
-                },
+                onTap: _openAccount,
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(18),
@@ -97,9 +332,9 @@ class OffersDrawer extends StatelessWidget {
                         width: 54,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.08)
-                              : Colors.black.withOpacity(0.08),
+                          color: widget.isDarkMode
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : Colors.black.withValues(alpha: 0.08),
                         ),
                         child: Center(
                           child: Container(
@@ -107,9 +342,9 @@ class OffersDrawer extends StatelessWidget {
                             width: 42,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: isDarkMode
-                                  ? Colors.white.withOpacity(0.06)
-                                  : Colors.black.withOpacity(0.06),
+                              color: widget.isDarkMode
+                                  ? Colors.white.withValues(alpha: 0.06)
+                                  : Colors.black.withValues(alpha: 0.06),
                             ),
                             child: ClipOval(
                               child: _buildProfileImage(profileProvider),
@@ -123,7 +358,9 @@ class OffersDrawer extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              MockClientData.clientName,
+                              _isLoadingProfile ? 'Loading...' : _clientName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: primaryTextColor,
                                 fontSize: 17,
@@ -132,7 +369,11 @@ class OffersDrawer extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              MockClientData.clientEmail,
+                              _clientEmail.isEmpty
+                                  ? 'Open and manage your profile'
+                                  : _clientEmail,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: secondaryTextColor,
                                 fontSize: 13,
@@ -150,30 +391,102 @@ class OffersDrawer extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
-              OffersDrawerItem(
-                icon: HugeIcons.strokeRoundedSettings01,
-                title: 'Settings',
-                isDarkMode: isDarkMode,
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const SettingsScreen(
-                        role: UserRoleType.client,
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      _sectionLabel('Workspace'),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedUser,
+                        title: 'Account',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: _openAccount,
                       ),
-                    ),
-                  );
-                },
+                      const SizedBox(height: 10),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedWork,
+                        title: 'My Offers',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: () => _closeDrawerAndRun(widget.onMyOffersTap),
+                      ),
+                      const SizedBox(height: 10),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedAdd01,
+                        title: 'Create Offer',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: () =>
+                            _closeDrawerAndRun(widget.onCreateOfferTap),
+                      ),
+                      const SizedBox(height: 10),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedFavourite,
+                        title: 'Interested Agents',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: () => _closeDrawerAndRun(widget.onInterestedTap),
+                      ),
+                      const SizedBox(height: 10),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedMessage01,
+                        title: 'Chats',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: () => _closeDrawerAndRun(widget.onChatsTap),
+                      ),
+                      _sectionLabel('Subscription'),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedWallet02,
+                        title: 'Subscription',
+                        isDarkMode: widget.isDarkMode,
+                        color: AppColors.accent,
+                        onTap: _openSubscription,
+                      ),
+                      _sectionLabel('Preferences'),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedNotification03,
+                        title: 'Notifications',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: _openNotifications,
+                      ),
+                      const SizedBox(height: 10),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedDarkMode,
+                        title: 'Appearance',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: _openAppearance,
+                      ),
+                      const SizedBox(height: 10),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedShield01,
+                        title: 'Privacy & Security',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: _openPrivacySecurity,
+                      ),
+                      _sectionLabel('Support'),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedHelpCircle,
+                        title: 'Help & Support',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: _openHelpSupport,
+                      ),
+                      const SizedBox(height: 10),
+                      OffersDrawerItem(
+                        icon: HugeIcons.strokeRoundedSettings01,
+                        title: 'Settings',
+                        isDarkMode: widget.isDarkMode,
+                        onTap: _openSettings,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const Spacer(),
+              const SizedBox(height: 14),
               OffersDrawerItem(
                 icon: HugeIcons.strokeRoundedLogout01,
                 title: 'Logout',
-                isDarkMode: isDarkMode,
+                isDarkMode: widget.isDarkMode,
                 color: Colors.redAccent,
-                onTap: () {},
+                onTap: () => _handleLogout(context),
               ),
               const SizedBox(height: 12),
             ],

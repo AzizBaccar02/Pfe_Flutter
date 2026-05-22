@@ -1,11 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
+import '../../../conf/app_colors.dart';
 import '../../../conf/theme_provider.dart';
-import '../../../data/mock_client_data.dart';
 import '../../../models/client_offer_model.dart';
+import '../../../services/offer_service.dart';
+import 'offer_detail_screen.dart';
+import '../widgets/my_offer_card.dart';
 
 class MyOffersScreen extends StatefulWidget {
   const MyOffersScreen({super.key});
@@ -15,225 +17,441 @@ class MyOffersScreen extends StatefulWidget {
 }
 
 class _MyOffersScreenState extends State<MyOffersScreen> {
-  String selectedFilter = 'All';
+  String _selectedFilter = 'All';
 
-  List<ClientOfferModel> get filteredOffers {
-    if (selectedFilter == 'All') return MockClientData.offers;
+  bool _isLoading = true;
+  bool _isMutating = false;
+  String? _errorMessage;
 
-    if (selectedFilter == 'Open') {
-      return MockClientData.offers
-          .where((offer) => offer.status == OfferStatus.open)
-          .toList();
-    }
+  List<ClientOfferModel> _offers = [];
 
-    if (selectedFilter == 'Closed') {
-      return MockClientData.offers
-          .where((offer) => offer.status == OfferStatus.closed)
-          .toList();
-    }
+  int get _openCount =>
+      _offers.where((o) => o.status == OfferStatus.open).length;
 
-    if (selectedFilter == 'Archived') {
-      return MockClientData.offers
-          .where((offer) => offer.status == OfferStatus.archived)
-          .toList();
-    }
+  int get _closedCount =>
+      _offers.where((o) => o.status == OfferStatus.closed).length;
 
-    return MockClientData.offers;
+  int get _archivedCount =>
+      _offers.where((o) => o.status == OfferStatus.archived).length;
+
+  int get _totalInterested =>
+      _offers.fold<int>(0, (sum, o) => sum + o.interestedAgentsCount);
+
+  List<ClientOfferModel> get _filteredOffers {
+    return switch (_selectedFilter) {
+      'Open' => _offers.where((o) => o.status == OfferStatus.open).toList(),
+      'Closed' => _offers.where((o) => o.status == OfferStatus.closed).toList(),
+      'Archived' =>
+        _offers.where((o) => o.status == OfferStatus.archived).toList(),
+      _ => _offers,
+    };
   }
 
+  int _countForFilter(String filter) => switch (filter) {
+        'Open' => _openCount,
+        'Closed' => _closedCount,
+        'Archived' => _archivedCount,
+        _ => _offers.length,
+      };
+
   @override
-  Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-    final isDarkMode = themeProvider.isDarkMode;
+  void initState() {
+    super.initState();
+    _loadOffers();
+  }
 
-    final backgroundColor = isDarkMode ? Colors.black : Colors.white;
-    final cardColor =
-        isDarkMode ? const Color(0xFF161616) : const Color(0xFFF3F3F3);
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.68)
-        : Colors.black.withOpacity(0.68);
+  Future<void> _loadOffers({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
-    return Container(
-      color: backgroundColor,
-      child: Column(
-        children: [
-          SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _FilterChipButton(
-                  label: 'All',
-                  selected: selectedFilter == 'All',
-                  isDarkMode: isDarkMode,
-                  onTap: () => setState(() => selectedFilter = 'All'),
-                ),
-                _FilterChipButton(
-                  label: 'Open',
-                  selected: selectedFilter == 'Open',
-                  isDarkMode: isDarkMode,
-                  onTap: () => setState(() => selectedFilter = 'Open'),
-                ),
-                _FilterChipButton(
-                  label: 'Closed',
-                  selected: selectedFilter == 'Closed',
-                  isDarkMode: isDarkMode,
-                  onTap: () => setState(() => selectedFilter = 'Closed'),
-                ),
-                _FilterChipButton(
-                  label: 'Archived',
-                  selected: selectedFilter == 'Archived',
-                  isDarkMode: isDarkMode,
-                  onTap: () => setState(() => selectedFilter = 'Archived'),
-                ),
-              ],
-            ),
+    try {
+      final offers = await OfferService.fetchMyOffers();
+
+      if (!mounted) return;
+
+      setState(() {
+        _offers = offers;
+        _errorMessage = null;
+      });
+    } on OfferException catch (e) {
+      if (!mounted) return;
+      setState(() => _errorMessage = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Unable to load your offers. Please try again.';
+      });
+    } finally {
+      if (mounted && showLoader) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _updateOfferStatus({
+    required ClientOfferModel offer,
+    required OfferStatus status,
+  }) async {
+    if (_isMutating) return;
+
+    setState(() => _isMutating = true);
+
+    try {
+      final updated = await OfferService.updateOfferStatus(
+        offerId: offer.id,
+        status: status,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _offers = _offers
+            .map((item) => item.id == updated.id ? updated : item)
+            .toList();
+      });
+
+      _showSnackBar('Offer updated successfully');
+    } on OfferException catch (e) {
+      if (!mounted) return;
+      _showSnackBar(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      _showSnackBar('Unable to update offer. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isMutating = false);
+    }
+  }
+
+  Future<void> _confirmDeleteOffer(ClientOfferModel offer) async {
+    final isDarkMode = context.read<ThemeProvider>().isDarkMode;
+
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDarkMode ? const Color(0xFF161616) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: Text(
+          'Delete offer?',
+          style: TextStyle(
+            color: isDarkMode ? Colors.white : Colors.black,
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: filteredOffers.isEmpty
-                ? Center(
-                    child: Text(
-                      'No offers found',
-                      style: TextStyle(
-                        color: secondaryTextColor,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 110),
-                    itemCount: filteredOffers.length,
-                    itemBuilder: (context, index) {
-                      final offer = filteredOffers[index];
-                      return _OfferListCard(
-                        offer: offer,
-                        isDarkMode: isDarkMode,
-                        cardColor: cardColor,
-                        primaryTextColor: primaryTextColor,
-                        secondaryTextColor: secondaryTextColor,
-                      );
-                    },
-                  ),
+        ),
+        content: Text(
+          '“${offer.title}” will be permanently removed.',
+          style: TextStyle(
+            color: isDarkMode
+                ? Colors.white.withValues(alpha: 0.7)
+                : Colors.black.withValues(alpha: 0.65),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: Colors.redAccent),
+            ),
           ),
         ],
       ),
     );
+
+    if (shouldDelete == true) await _deleteOffer(offer);
+  }
+
+  Future<void> _deleteOffer(ClientOfferModel offer) async {
+    if (_isMutating) return;
+
+    setState(() => _isMutating = true);
+
+    try {
+      await OfferService.deleteOffer(offerId: offer.id);
+
+      if (!mounted) return;
+
+      setState(() {
+        _offers = _offers.where((item) => item.id != offer.id).toList();
+      });
+
+      _showSnackBar('Offer deleted');
+    } on OfferException catch (e) {
+      if (!mounted) return;
+      _showSnackBar(e.message);
+    } catch (_) {
+      if (!mounted) return;
+      _showSnackBar('Unable to delete offer.');
+    } finally {
+      if (mounted) setState(() => _isMutating = false);
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF151515),
+      ),
+    );
+  }
+
+  Future<void> _openOfferDetails(ClientOfferModel offer) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OfferDetailScreen(
+          offer: offer,
+          onOfferUpdated: () => _loadOffers(showLoader: false),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    await _loadOffers(showLoader: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
+    final backgroundColor = isDarkMode ? Colors.black : const Color(0xFFF6F7F9);
+    final primary = isDarkMode ? Colors.white : Colors.black;
+    final secondary = isDarkMode
+        ? Colors.white.withValues(alpha: 0.62)
+        : Colors.black.withValues(alpha: 0.58);
+
+    return Container(
+      color: backgroundColor,
+      child: _isLoading
+          ? Center(
+              child: CircularProgressIndicator(color: AppColors.accent),
+            )
+          : _errorMessage != null && _offers.isEmpty
+              ? _ErrorState(
+                  message: _errorMessage!,
+                  isDarkMode: isDarkMode,
+                  onRetry: _loadOffers,
+                )
+              : RefreshIndicator(
+                  color: AppColors.accent,
+                  onRefresh: () => _loadOffers(showLoader: false),
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'My Offers',
+                                style: TextStyle(
+                                  color: primary,
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _offers.isEmpty
+                                    ? 'Manage your posted jobs'
+                                    : '${_offers.length} offer${_offers.length == 1 ? '' : 's'} · $_totalInterested interested agents',
+                                style: TextStyle(
+                                  color: secondary,
+                                  fontSize: 14,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _StatTile(
+                                      label: 'Total',
+                                      value: '${_offers.length}',
+                                      icon: HugeIcons.strokeRoundedWork,
+                                      isDarkMode: isDarkMode,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _StatTile(
+                                      label: 'Open',
+                                      value: '$_openCount',
+                                      icon: HugeIcons.strokeRoundedCheckmarkCircle01,
+                                      isDarkMode: isDarkMode,
+                                      accent: AppColors.accent,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _StatTile(
+                                      label: 'Interested',
+                                      value: '$_totalInterested',
+                                      icon: HugeIcons.strokeRoundedFavourite,
+                                      isDarkMode: isDarkMode,
+                                      accent: AppColors.accent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 18),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    _FilterChip(
+                                      label: 'All',
+                                      count: _countForFilter('All'),
+                                      selected: _selectedFilter == 'All',
+                                      isDarkMode: isDarkMode,
+                                      onTap: () => setState(
+                                        () => _selectedFilter = 'All',
+                                      ),
+                                    ),
+                                    _FilterChip(
+                                      label: 'Open',
+                                      count: _openCount,
+                                      selected: _selectedFilter == 'Open',
+                                      isDarkMode: isDarkMode,
+                                      onTap: () => setState(
+                                        () => _selectedFilter = 'Open',
+                                      ),
+                                    ),
+                                    _FilterChip(
+                                      label: 'Closed',
+                                      count: _closedCount,
+                                      selected: _selectedFilter == 'Closed',
+                                      isDarkMode: isDarkMode,
+                                      onTap: () => setState(
+                                        () => _selectedFilter = 'Closed',
+                                      ),
+                                    ),
+                                    _FilterChip(
+                                      label: 'Archived',
+                                      count: _archivedCount,
+                                      selected: _selectedFilter == 'Archived',
+                                      isDarkMode: isDarkMode,
+                                      onTap: () => setState(
+                                        () => _selectedFilter = 'Archived',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_filteredOffers.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: _EmptyFilterState(
+                            filter: _selectedFilter,
+                            isDarkMode: isDarkMode,
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final offer = _filteredOffers[index];
+
+                                return MyOfferCard(
+                                  offer: offer,
+                                  isDarkMode: isDarkMode,
+                                  isBusy: _isMutating,
+                                  onTap: () => _openOfferDetails(offer),
+                                  onStatusChanged: (status) {
+                                    _updateOfferStatus(
+                                      offer: offer,
+                                      status: status,
+                                    );
+                                  },
+                                  onDelete: () => _confirmDeleteOffer(offer),
+                                );
+                              },
+                              childCount: _filteredOffers.length,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+    );
   }
 }
 
-class _OfferListCard extends StatelessWidget {
-  final ClientOfferModel offer;
+class _StatTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final dynamic icon;
   final bool isDarkMode;
-  final Color cardColor;
-  final Color primaryTextColor;
-  final Color secondaryTextColor;
+  final Color? accent;
 
-  const _OfferListCard({
-    required this.offer,
+  const _StatTile({
+    required this.label,
+    required this.value,
+    required this.icon,
     required this.isDarkMode,
-    required this.cardColor,
-    required this.primaryTextColor,
-    required this.secondaryTextColor,
+    this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = offer.images.isNotEmpty;
-    final imagePath = hasImage ? offer.images.first : null;
+    final cardColor =
+        isDarkMode ? const Color(0xFF161616) : Colors.white;
+    final primary = isDarkMode ? Colors.white : Colors.black;
+    final iconColor = accent ?? primary;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDarkMode
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.black.withValues(alpha: 0.05),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (hasImage)
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
-              child: SizedBox(
-                height: 190,
-                width: double.infinity,
-                child: imagePath!.startsWith('assets/')
-                    ? Image.asset(
-                        imagePath,
-                        fit: BoxFit.cover,
-                      )
-                    : Image.file(
-                        File(imagePath),
-                        fit: BoxFit.cover,
-                      ),
-              ),
+          HugeIcon(icon: icon, color: iconColor, size: 18),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: TextStyle(
+              color: primary,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
             ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  offer.title,
-                  style: TextStyle(
-                    color: primaryTextColor,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  offer.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: secondaryTextColor,
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _InfoPill(
-                      text: offer.category,
-                      isDarkMode: isDarkMode,
-                    ),
-                    _InfoPill(
-                      text: offer.city,
-                      isDarkMode: isDarkMode,
-                    ),
-                    _InfoPill(
-                      text: '${offer.budget.toStringAsFixed(0)} DT',
-                      isDarkMode: isDarkMode,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    _StatusBadge(
-                      status: offer.status,
-                      isDarkMode: isDarkMode,
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${offer.interestedAgentsCount} interested',
-                      style: TextStyle(
-                        color: primaryTextColor,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              color: isDarkMode
+                  ? Colors.white.withValues(alpha: 0.5)
+                  : Colors.black.withValues(alpha: 0.45),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -242,14 +460,16 @@ class _OfferListCard extends StatelessWidget {
   }
 }
 
-class _FilterChipButton extends StatelessWidget {
+class _FilterChip extends StatelessWidget {
   final String label;
+  final int count;
   final bool selected;
   final bool isDarkMode;
   final VoidCallback onTap;
 
-  const _FilterChipButton({
+  const _FilterChip({
     required this.label,
+    required this.count,
     required this.selected,
     required this.isDarkMode,
     required this.onTap,
@@ -257,107 +477,166 @@ class _FilterChipButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedBg = isDarkMode ? Colors.white : Colors.black;
-    final selectedText = isDarkMode ? Colors.black : Colors.white;
-    final unselectedBg =
-        isDarkMode ? const Color(0xFF161616) : const Color(0xFFF0F0F0);
-    final unselectedText = isDarkMode ? Colors.white : Colors.black;
-
     return Padding(
       padding: const EdgeInsets.only(right: 10),
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           decoration: BoxDecoration(
-            color: selected ? selectedBg : unselectedBg,
+            color: selected
+                ? AppColors.accent
+                : (isDarkMode
+                    ? const Color(0xFF161616)
+                    : Colors.white),
             borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? selectedText : unselectedText,
-              fontWeight: FontWeight.w700,
+            border: Border.all(
+              color: selected
+                  ? AppColors.accent
+                  : (isDarkMode
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : Colors.black.withValues(alpha: 0.06)),
             ),
           ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white
+                      : (isDarkMode ? Colors.white : Colors.black),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.22)
+                      : (isDarkMode
+                          ? Colors.white.withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.06)),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    color: selected
+                        ? Colors.white
+                        : (isDarkMode
+                            ? Colors.white.withValues(alpha: 0.7)
+                            : Colors.black.withValues(alpha: 0.55)),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _InfoPill extends StatelessWidget {
-  final String text;
+class _EmptyFilterState extends StatelessWidget {
+  final String filter;
   final bool isDarkMode;
 
-  const _InfoPill({
-    required this.text,
+  const _EmptyFilterState({
+    required this.filter,
     required this.isDarkMode,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: isDarkMode
-            ? Colors.white.withOpacity(0.06)
-            : Colors.black.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isDarkMode ? Colors.white70 : Colors.black87,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+    final primary = isDarkMode ? Colors.white : Colors.black;
+    final secondary = isDarkMode
+        ? Colors.white.withValues(alpha: 0.6)
+        : Colors.black.withValues(alpha: 0.55);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const HugeIcon(
+                icon: HugeIcons.strokeRoundedWork,
+                color: AppColors.accent,
+                size: 32,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              filter == 'All' ? 'No offers yet' : 'No $filter offers',
+              style: TextStyle(
+                color: primary,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              filter == 'All'
+                  ? 'Create an offer from the + tab to get started.'
+                  : 'Try another filter to see your offers.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: secondary, height: 1.45),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _StatusBadge extends StatelessWidget {
-  final OfferStatus status;
+class _ErrorState extends StatelessWidget {
+  final String message;
   final bool isDarkMode;
+  final VoidCallback onRetry;
 
-  const _StatusBadge({
-    required this.status,
+  const _ErrorState({
+    required this.message,
     required this.isDarkMode,
+    required this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
-    Color color;
-    String text;
+    final primary = isDarkMode ? Colors.white : Colors.black;
 
-    switch (status) {
-      case OfferStatus.open:
-        color = Colors.greenAccent;
-        text = 'Open';
-        break;
-      case OfferStatus.closed:
-        color = Colors.orangeAccent;
-        text = 'Closed';
-        break;
-      case OfferStatus.archived:
-        color = Colors.blueGrey;
-        text = 'Archived';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: primary, height: 1.45),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: onRetry,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+              ),
+              child: const Text('Retry'),
+            ),
+          ],
         ),
       ),
     );

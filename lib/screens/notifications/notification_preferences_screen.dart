@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../conf/app_colors.dart';
 import '../../conf/theme_provider.dart';
 import '../settings/widgets/settings_section_title.dart';
 import '../settings/widgets/settings_switch_tile.dart';

@@ -16,81 +16,11 @@ class AgentOffersScreen extends StatefulWidget {
 }
 
 class _AgentOffersScreenState extends State<AgentOffersScreen> {
-  List<SwipeOfferCardData> _offers = [];
-  bool _isLoading = true;
-  String? _loadError;
+  final List<SwipeOfferCardData> _offers = [];
 
-  // Fallback removed after API load — kept empty until _loadOffers runs.
-  final List<SwipeOfferCardData> _fallbackOffers = [
-    SwipeOfferCardData(
-      id: 1,
-      clientUserId: 0,
-      title: 'Flutter marketplace app polish',
-      category: 'Mobile Development',
-      city: 'Tunis',
-      budget: '1200 DT',
-      clientName: 'JobMatch Client',
-      description:
-          'We need a Flutter developer to refine UI quality, improve user flows, and connect polished screens to backend APIs for a service marketplace app.',
-      imageUrls: [
-        'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80',
-                'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80',
-                'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80',
-                'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80',
-                'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80',
-                'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1551650975-87deedd944c3?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1200&q=80',
-      ],
-      skills: ['Flutter', 'UI polish', 'API integration'],
-      highlights: ['Responsive UI', 'Clean structure', 'Premium finish'],
-    ),
-    SwipeOfferCardData(
-      id: 2,
-      clientUserId: 0,
-      title: 'Restaurant booking mobile app UI',
-      category: 'UI / UX',
-      city: 'Sousse',
-      budget: '850 DT',
-      clientName: 'Restaurant Group',
-      description:
-          'The client wants a modern booking experience with smooth navigation, refined layout hierarchy, and clean interactive screens for mobile users.',
-      imageUrls: [
-        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?auto=format&fit=crop&w=1200&q=80',
-      ],
-      skills: ['UI Design', 'Mobile UX', 'Booking flow'],
-      highlights: ['User journey', 'Modern visuals', 'Clear hierarchy'],
-    ),
-    SwipeOfferCardData(
-      id: 3,
-      clientUserId: 0,
-      title: 'Delivery app frontend integration',
-      category: 'Frontend Integration',
-      city: 'Ariana',
-      budget: '1400 DT',
-      clientName: 'Local Startup',
-      description:
-          'We are looking for a frontend-focused developer to connect production-ready screens, authentication, tracking states, and reusable components.',
-      imageUrls: [
-        'https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1200&q=80',
-        'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?auto=format&fit=crop&w=1200&q=80',
-      ],
-      skills: ['Reusable widgets', 'Tracking UI', 'Auth flow'],
-      highlights: ['Clean architecture', 'API ready', 'Scalable screens'],
-    ),
-  ];
+  bool _isLoadingInitial = true;
+  String? _loadError;
+  bool _isSubmittingReaction = false;
 
   Offset _dragOffset = Offset.zero;
 
@@ -148,13 +78,71 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
     );
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _loadOffers();
+  }
+
+  Future<void> _loadOffers() async {
+    setState(() {
+      _isLoadingInitial = true;
+      _loadError = null;
+    });
+
+    try {
+      final list = await OfferService.fetchAgentOffers();
+      if (!mounted) return;
+
+      setState(() {
+        _offers
+          ..clear()
+          ..addAll(list.map(_toSwipeCard));
+        _isLoadingInitial = false;
+      });
+    } on OfferException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _offers.clear();
+        _loadError = e.message;
+        _isLoadingInitial = false;
+      });
+    }
+  }
+
+  SwipeOfferCardData _toSwipeCard(AgentPublicOfferModel m) {
+    final skills = m.skills.isNotEmpty
+        ? m.skills
+        : (m.categoryName.isNotEmpty ? [m.categoryName] : <String>[]);
+
+    return SwipeOfferCardData(
+      id: m.id,
+      title: m.title.isEmpty ? 'Untitled offer' : m.title,
+      category: m.categoryName.isEmpty ? 'Uncategorized' : m.categoryName,
+      city: m.city.isEmpty ? 'Location not specified' : m.city,
+      budget: m.budgetLabel,
+      clientName: m.clientName.isEmpty ? 'Client' : m.clientName,
+      description: m.description.isEmpty
+          ? 'No description provided.'
+          : m.description,
+      imageUrls: m.imageUrls,
+      skills: skills,
+      highlights: m.highlights,
+    );
+  }
+
   void _onPanUpdate(DragUpdateDetails details) {
+    if (_isSubmittingReaction) return;
+
     setState(() {
       _dragOffset += details.delta;
     });
   }
 
   void _onPanEnd(DragEndDetails details) {
+    if (_isSubmittingReaction) return;
+
     const threshold = 120.0;
 
     if (_dragOffset.dx > threshold) {
@@ -173,59 +161,65 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
   }
 
   Future<void> _commitSwipe({required bool isLike}) async {
-    if (_offers.isEmpty) return;
+    if (_offers.isEmpty || _isSubmittingReaction) return;
 
     final offer = _offers.first;
 
     setState(() {
-      _offers.removeAt(0);
-      _dragOffset = Offset.zero;
+      _isSubmittingReaction = true;
     });
 
-    if (isLike) {
-      try {
-        final price = double.tryParse(
-          offer.budget.replaceAll(RegExp(r'[^0-9.]'), ''),
-        );
+    try {
+      await InteractionService.reactToOffer(
+        offerId: offer.id,
+        react: isLike,
+      );
 
-        await OfferReactionService.recordAgentLikeOffer(
-          offerId: offer.id,
-          proposedPrice: price,
-        );
-      } on InteractionServiceException catch (e) {
-        if (!mounted) return;
+      if (!mounted) return;
 
+      setState(() {
+        _offers.removeAt(0);
+        _dragOffset = Offset.zero;
+        _isSubmittingReaction = false;
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isLike
+                ? 'You reacted to "${offer.title}"'
+                : 'You skipped "${offer.title}"',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF151515),
+        ),
+      );
+    } on InteractionException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _dragOffset = Offset.zero;
+        _isSubmittingReaction = false;
+      });
+
+      if (UsageLimitDialog.isUsageLimitMessage(e.message)) {
+        await UsageLimitDialog.show(
+          context,
+          isAgent: true,
+          message: e.message,
+        );
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.message),
             behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } catch (e) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFFB91C1C),
           ),
         );
       }
     }
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          isLike
-              ? 'Interest sent for "${offer.title}"'
-              : 'You skipped "${offer.title}"',
-        ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF151515),
-      ),
-    );
   }
 
   void _openDetails(SwipeOfferCardData offer) {
@@ -405,6 +399,65 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
     );
   }
 
+  Widget _buildInitialError(bool isDarkMode) {
+    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
+    final secondaryTextColor = isDarkMode
+        ? Colors.white.withOpacity(0.68)
+        : Colors.black.withOpacity(0.62);
+    final cardColor =
+        isDarkMode ? const Color(0xFF151515) : const Color(0xFFF5F5F5);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(26),
+              decoration: BoxDecoration(
+                color: cardColor,
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    'Could not load offers',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: primaryTextColor,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _loadError ?? 'Please try again.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: secondaryTextColor,
+                      fontSize: 14,
+                      height: 1.55,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _loadOffers,
+                      child: const Text('Retry'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyState(bool isDarkMode) {
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -509,6 +562,22 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
               ),
             ),
           ),
+
+          if (_isSubmittingReaction)
+            Positioned.fill(
+              child: AbsorbPointer(
+                child: Container(
+                  color: Colors.black.withOpacity(0.12),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(strokeWidth: 2.6),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -518,6 +587,24 @@ class _AgentOffersScreenState extends State<AgentOffersScreen> {
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
+
+    Widget body;
+
+    if (_isLoadingInitial) {
+      body = const Center(
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: CircularProgressIndicator(strokeWidth: 2.6),
+        ),
+      );
+    } else if (_loadError != null) {
+      body = _buildInitialError(isDarkMode);
+    } else if (_isEmpty) {
+      body = _buildEmptyState(isDarkMode);
+    } else {
+      body = _buildDeck(isDarkMode);
+    }
 
     return Scaffold(
       backgroundColor: backgroundColor,

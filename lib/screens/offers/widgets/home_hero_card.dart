@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_colors.dart';
+
 class HomeHeroCard extends StatelessWidget {
   final bool isDarkMode;
   final String clientName;
@@ -15,9 +17,9 @@ class HomeHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentYellow = Color(0xFFFFC107);
-    const accentYellowSoft = Color(0xFFFFE082);
-    const accentYellowDeep = Color(0xFF5D4200);
+    const accent = AppColors.accent;
+    const accentSoft = AppColors.accentSoft;
+    const accentDeep = AppColors.accentDeep;
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -62,7 +64,7 @@ class HomeHeroCard extends StatelessWidget {
           ),
         ],
         border: Border.all(
-          color: accentYellow.withOpacity(isDarkMode ? 0.14 : 0.20),
+          color: accent.withOpacity(isDarkMode ? 0.14 : 0.20),
         ),
       ),
       child: Column(
@@ -76,8 +78,8 @@ class HomeHeroCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   color: isDarkMode
-                      ? accentYellow.withOpacity(0.12)
-                      : accentYellow.withOpacity(0.14),
+                      ? accent.withOpacity(0.12)
+                      : accent.withOpacity(0.14),
                 ),
                 child: Center(
                   child: HugeIcon(
@@ -93,10 +95,10 @@ class HomeHeroCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   color: isDarkMode
-                      ? accentYellow.withOpacity(0.10)
-                      : accentYellow.withOpacity(0.12),
+                      ? accent.withOpacity(0.10)
+                      : accent.withOpacity(0.12),
                   border: Border.all(
-                    color: accentYellow.withOpacity(isDarkMode ? 0.22 : 0.28),
+                    color: accent.withOpacity(isDarkMode ? 0.22 : 0.28),
                   ),
                 ),
                 child: Text(
@@ -149,13 +151,13 @@ class HomeHeroCard extends StatelessWidget {
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                   colors: [
-                    accentYellowSoft,
-                    accentYellow,
+                    accentSoft,
+                    accent,
                   ],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: accentYellow.withOpacity(0.26),
+                    color: accent.withOpacity(0.26),
                     blurRadius: 16,
                     offset: const Offset(0, 8),
                   ),
@@ -166,14 +168,14 @@ class HomeHeroCard extends StatelessWidget {
                 children: const [
                   HugeIcon(
                     icon: HugeIcons.strokeRoundedAdd01,
-                    color: accentYellowDeep,
+                    color: accentDeep,
                     size: 18,
                   ),
                   SizedBox(width: 10),
                   Text(
                     'Create Offer',
                     style: TextStyle(
-                      color: accentYellowDeep,
+                      color: accentDeep,
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                     ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_colors.dart';
 import '../../../models/app_notification_model.dart';
 
 class NotificationTile extends StatelessWidget {
@@ -30,7 +31,7 @@ class NotificationTile extends StatelessWidget {
 
     final cardColor = notification.isRead
         ? (isDarkMode ? const Color(0xFF141414) : const Color(0xFFF6F6F6))
-        : (isDarkMode ? const Color(0xFF181818) : const Color(0xFFFAF7EC));
+        : (isDarkMode ? const Color(0xFF181818) : AppColors.accentSurface);
 
     final borderColor = notification.isRead
         ? (isDarkMode

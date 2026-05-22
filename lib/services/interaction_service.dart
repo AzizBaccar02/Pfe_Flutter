@@ -562,14 +562,39 @@ class InteractionService {
       return body;
     }
 
-    return 'HTTP $statusCode';
+    if (body is Map<String, dynamic>) {
+      final message = body['message'];
+      final detail = body['detail'];
+
+      if (message != null && message.toString().trim().isNotEmpty) {
+        return message.toString();
+      }
+
+      if (detail != null && detail.toString().trim().isNotEmpty) {
+        return detail.toString();
+      }
+
+      for (final entry in body.entries) {
+        final value = entry.value;
+
+        if (value is List && value.isNotEmpty) {
+          return value.first.toString();
+        }
+
+        if (value is String && value.trim().isNotEmpty) {
+          return value;
+        }
+      }
+    }
+
+    return 'Something went wrong. Please try again.';
   }
 }
 
-class InteractionServiceException implements Exception {
+class InteractionException implements Exception {
   final String message;
 
-  const InteractionServiceException(this.message);
+  const InteractionException(this.message);
 
   @override
   String toString() => message;
