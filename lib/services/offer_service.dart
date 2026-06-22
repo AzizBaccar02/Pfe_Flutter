@@ -6,13 +6,145 @@ import 'package:http/http.dart' as http;
 
 import '../models/agent_public_offer_model.dart';
 import '../models/client_offer_model.dart';
+import '../models/offer_category_model.dart';
 import 'auth_service.dart';
 
 class OfferService {
   static const String _clientOffersPath = '/api/offers/client/offers/';
   static const String _agentOffersPath = '/api/offers/agent/offers/';
+  static const String _categoriesPath = '/api/offers/categories/';
 
-  static Future<List<ClientOfferModel>> fetchMyOffers() async {
+  static List<ClientOfferModel>? _myOffersCache;
+  static DateTime? _myOffersCachedAt;
+  static Future<List<ClientOfferModel>>? _myOffersInFlight;
+
+  static void invalidateMyOffersCache() {
+    _myOffersCache = null;
+    _myOffersCachedAt = null;
+  }
+
+  static Future<List<OfferCategoryModel>> fetchCategories() async {
+    final response = await _authorizedRequest(
+      requestBuilder: (headers) {
+        return http.get(
+          AuthService.apiUri(_categoriesPath),
+          headers: headers,
+        );
+      },
+    );
+
+    final decoded = _decodeResponse(response);
+
+    if (response.statusCode != 200) {
+      throw OfferException(_extractErrorMessage(decoded));
+    }
+
+    if (decoded is! List) {
+      throw const OfferException('Invalid categories response from server.');
+    }
+
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(OfferCategoryModel.fromJson)
+        .where((category) => category.name.trim().isNotEmpty)
+        .toList();
+  }
+
+  static Future<OfferCategoryModel> createCategory(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw const OfferException('Category name is required.');
+    }
+
+    final response = await _authorizedRequest(
+      requestBuilder: (headers) {
+        return http.post(
+          AuthService.apiUri(_categoriesPath),
+          headers: headers,
+          body: jsonEncode({
+            'name': trimmed,
+            'description': '',
+          }),
+        );
+      },
+    );
+
+    final decoded = _decodeResponse(response);
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw OfferException(_extractErrorMessage(decoded));
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const OfferException('Invalid category response from server.');
+    }
+
+    return OfferCategoryModel.fromJson(decoded);
+  }
+
+  /// Resolves offer title for client UI (Interested deck, notifications).
+  static Future<String?> resolveOfferTitle(int offerId) async {
+    final media = await resolveOfferMedia(offerId);
+    return media?.title;
+  }
+
+  /// Title + cover image from the client's own offers list.
+  static Future<({String title, String imageUrl})?> resolveOfferMedia(
+    int offerId,
+  ) async {
+    if (offerId <= 0) return null;
+
+    try {
+      final offers = await fetchMyOffers();
+      for (final offer in offers) {
+        if (offer.id != offerId) continue;
+
+        final title = offer.title.trim();
+        final imageUrl = offer.images.isNotEmpty ? offer.images.first : '';
+
+        if (title.isEmpty && imageUrl.isEmpty) return null;
+
+        return (
+          title: title.isNotEmpty ? title : 'Your offer',
+          imageUrl: imageUrl,
+        );
+      }
+    } catch (_) {
+      // Fall through.
+    }
+
+    return null;
+  }
+
+  static Future<List<ClientOfferModel>> fetchMyOffers({bool force = false}) async {
+    if (!force &&
+        _myOffersCache != null &&
+        _myOffersCachedAt != null &&
+        DateTime.now().difference(_myOffersCachedAt!) <
+            const Duration(seconds: 4)) {
+      return List<ClientOfferModel>.from(_myOffersCache!);
+    }
+
+    if (!force && _myOffersInFlight != null) {
+      return _myOffersInFlight!;
+    }
+
+    final future = _fetchMyOffersFromNetwork();
+    _myOffersInFlight = future;
+
+    try {
+      final offers = await future;
+      _myOffersCache = offers;
+      _myOffersCachedAt = DateTime.now();
+      return List<ClientOfferModel>.from(offers);
+    } finally {
+      if (identical(_myOffersInFlight, future)) {
+        _myOffersInFlight = null;
+      }
+    }
+  }
+
+  static Future<List<ClientOfferModel>> _fetchMyOffersFromNetwork() async {
     final response = await _authorizedRequest(
       requestBuilder: (headers) {
         return http.get(
@@ -65,6 +197,51 @@ class OfferService {
         .toList();
   }
 
+  /// Loads one public offer for the agent deck (notification deep-link / prepend).
+  static Future<AgentPublicOfferModel?> fetchAgentOfferById(int offerId) async {
+    if (offerId <= 0) return null;
+
+    final paths = [
+      '$_agentOffersPath$offerId/',
+      '/api/offers/$offerId/',
+      '/api/offers/offers/$offerId/',
+    ];
+
+    for (final path in paths) {
+      try {
+        final response = await _authorizedRequest(
+          requestBuilder: (headers) {
+            return http.get(
+              AuthService.apiUri(path),
+              headers: headers,
+            );
+          },
+        );
+
+        final decoded = _decodeResponse(response);
+        if (response.statusCode != 200) continue;
+
+        if (decoded is Map<String, dynamic>) {
+          final offer = AgentPublicOfferModel.fromJson(decoded);
+          if (offer.id > 0) return offer;
+        }
+      } on OfferException {
+        continue;
+      }
+    }
+
+    try {
+      final all = await fetchAgentOffers();
+      for (final offer in all) {
+        if (offer.id == offerId) return offer;
+      }
+    } catch (_) {
+      // Fall through.
+    }
+
+    return null;
+  }
+
   static Future<ClientOfferModel> createOffer({
     required String title,
     required String description,
@@ -97,26 +274,51 @@ class OfferService {
 
     final decoded = _decodeResponse(response);
 
-    if (response.statusCode != 201) {
+    if (response.statusCode != 201 && response.statusCode != 200) {
       throw OfferException(_extractErrorMessage(decoded));
     }
 
-    if (decoded is! Map<String, dynamic>) {
+    final offerJson = _extractOfferJson(decoded);
+    if (offerJson == null) {
       throw const OfferException('Invalid offer response from server.');
     }
 
-    var createdOffer = ClientOfferModel.fromJson(decoded);
+    var createdOffer = ClientOfferModel.fromJson(offerJson);
+    invalidateMyOffersCache();
 
     if (imagePaths.isNotEmpty && createdOffer.id > 0) {
-      final uploadedImages = await uploadOfferImages(
-        offerId: createdOffer.id,
-        imagePaths: imagePaths,
-      );
+      try {
+        final uploadedImages = await uploadOfferImages(
+          offerId: createdOffer.id,
+          imagePaths: imagePaths,
+        );
 
-      createdOffer = createdOffer.copyWith(images: uploadedImages);
+        createdOffer = createdOffer.copyWith(images: uploadedImages);
+      } on OfferException catch (e) {
+        throw OfferPartialCreateException(
+          offer: createdOffer,
+          imageError: _friendlyImageUploadError(e.message),
+        );
+      }
     }
 
     return createdOffer;
+  }
+
+  static String _friendlyImageUploadError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('integrityerror') ||
+        lower.contains('already exists') ||
+        lower.contains('duplicate key')) {
+      return 'Images could not be saved (server database sequence). '
+          'Restart Django and run: python manage.py migrate offers';
+    }
+    if (raw.trim().isEmpty ||
+        raw.contains('<!DOCTYPE html>') ||
+        raw.contains('IntegrityError')) {
+      return 'Images could not be uploaded. The offer was still created.';
+    }
+    return raw;
   }
 
   static Future<ClientOfferModel> updateOffer({
@@ -260,7 +462,7 @@ class OfferService {
       final response = await http.Response.fromStream(streamedResponse);
       final decoded = _decodeResponse(response);
 
-      if (response.statusCode != 201) {
+      if (response.statusCode != 201 && response.statusCode != 200) {
         throw OfferException(_extractErrorMessage(decoded));
       }
 
@@ -329,6 +531,17 @@ class OfferService {
     }
   }
 
+  static Map<String, dynamic>? _extractOfferJson(dynamic decoded) {
+    if (decoded is Map<String, dynamic>) {
+      final nested = decoded['offer'] ?? decoded['data'] ?? decoded['result'];
+      if (nested is Map<String, dynamic>) return nested;
+      if (nested is Map) return Map<String, dynamic>.from(nested);
+      return decoded;
+    }
+
+    return null;
+  }
+
   static dynamic _decodeResponse(http.Response response) {
     if (response.body.trim().isEmpty) return null;
 
@@ -345,7 +558,14 @@ class OfferService {
     }
 
     if (body is String && body.trim().isNotEmpty) {
-      return body;
+      final text = body.trim();
+      if (text.contains('IntegrityError') || text.contains('already exists')) {
+        return 'Database error while saving images. Please contact support or retry.';
+      }
+      if (text.length > 280 || text.contains('<!DOCTYPE html>')) {
+        return 'Server error. Please try again.';
+      }
+      return text;
     }
 
     if (body is Map<String, dynamic>) {
@@ -388,4 +608,18 @@ class OfferException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Offer row was created but optional image upload failed.
+class OfferPartialCreateException implements Exception {
+  final ClientOfferModel offer;
+  final String imageError;
+
+  const OfferPartialCreateException({
+    required this.offer,
+    required this.imageError,
+  });
+
+  @override
+  String toString() => imageError;
 }

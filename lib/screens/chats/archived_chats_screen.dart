@@ -1,6 +1,7 @@
 // lib/screens/chats/archived_chats_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 
 import '../../models/chat_conversation_summary_model.dart';
 import 'widgets/chat_tile.dart';
@@ -8,6 +9,7 @@ import 'widgets/chat_tile.dart';
 class ArchivedChatsScreen extends StatefulWidget {
   final List<ChatConversationSummaryModel> chats;
   final int currentUserId;
+  final String viewerRole;
   final Color backgroundColor;
   final Color primaryTextColor;
   final Color secondaryTextColor;
@@ -22,6 +24,7 @@ class ArchivedChatsScreen extends StatefulWidget {
     super.key,
     required this.chats,
     required this.currentUserId,
+    this.viewerRole = '',
     required this.backgroundColor,
     required this.primaryTextColor,
     required this.secondaryTextColor,
@@ -62,12 +65,8 @@ class _ArchivedChatsScreenState extends State<ArchivedChatsScreen> {
         backgroundColor: widget.backgroundColor,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: widget.primaryTextColor,
-          ),
-          onPressed: () => Navigator.pop(context),
+        leading: AppBackButton(
+          isDarkMode: Theme.of(context).brightness == Brightness.dark,
         ),
         title: Text(
           'Archived',
@@ -102,6 +101,7 @@ class _ArchivedChatsScreenState extends State<ArchivedChatsScreen> {
                   ChatTile(
                     chat: chat,
                     currentUserId: widget.currentUserId,
+                    viewerRole: widget.viewerRole,
                     conversationTitle: widget.conversationTitleFor(chat),
                     trailingText: widget.formatTrailingTime(chat.lastActivityDate),
                     primaryTextColor: widget.primaryTextColor,

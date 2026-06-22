@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../conf/user_profile_provider.dart';
 import '../../../models/agent_profile_model.dart';
+import '../../../services/app_realtime_coordinator.dart';
 import '../../../services/profile_service.dart';
 import '../../../widgets/custom_text_field.dart';
 import '../../../widgets/phone_text_field.dart';
@@ -47,6 +49,7 @@ class _AgentCompleteProfileFlowScreenState
   bool _isInitializing = true;
   bool _isSubmitting = false;
   String? _screenError;
+  String? _remoteProfileImageUrl;
   bool _didInitLocalImage = false;
 
   @override
@@ -76,6 +79,14 @@ class _AgentCompleteProfileFlowScreenState
 
       if (!mounted) return;
 
+      final profileProvider = context.read<UserProfileProvider>();
+      final localPath = profileProvider.localProfileImagePath;
+      final remoteUrl = ProfileService.resolveMediaUrl(data.photoUrl);
+
+      if (remoteUrl != null && remoteUrl.isNotEmpty) {
+        profileProvider.setRemoteProfileImageUrl(remoteUrl);
+      }
+
       setState(() {
         firstNameController.text = data.firstName;
         lastNameController.text = data.lastName;
@@ -87,6 +98,10 @@ class _AgentCompleteProfileFlowScreenState
         hourlyRateController.text =
             data.hourlyRate > 0 ? data.hourlyRate.toString() : '';
         selectedCity = data.city.isEmpty ? null : data.city;
+        _remoteProfileImageUrl = remoteUrl;
+        if (localPath != null && localPath.isNotEmpty) {
+          selectedProfileImage = XFile(localPath);
+        }
         _screenError = null;
       });
     } on ProfileException catch (e) {
@@ -232,6 +247,8 @@ class _AgentCompleteProfileFlowScreenState
         );
       }
 
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'agent_profile_step');
+
       if (!mounted) return;
 
       setState(() {
@@ -267,6 +284,8 @@ class _AgentCompleteProfileFlowScreenState
   }
 
   void _handleFinish() {
+    AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'agent_profile_done');
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Agent profile completed successfully.'),
@@ -380,16 +399,29 @@ class _AgentCompleteProfileFlowScreenState
       child: Column(
         children: [
           ProfilePhotoPicker(
+            key: ValueKey(
+              '${selectedProfileImage?.path ?? ''}|${_remoteProfileImageUrl ?? ''}',
+            ),
             isDarkMode: isDarkMode,
             initialImage: selectedProfileImage,
+            remoteImageUrl: selectedProfileImage == null
+                ? _remoteProfileImageUrl
+                : null,
             onImageChanged: (image) {
               setState(() {
                 selectedProfileImage = image;
+                if (image != null) {
+                  _remoteProfileImageUrl = null;
+                }
               });
 
-              context
-                  .read<UserProfileProvider>()
-                  .setLocalProfileImagePath(image?.path);
+              if (image == null) {
+                context.read<UserProfileProvider>().clearProfileImage();
+              } else {
+                context
+                    .read<UserProfileProvider>()
+                    .setLocalProfileImagePath(image.path);
+              }
             },
           ),
           const SizedBox(height: 18),
@@ -564,36 +596,57 @@ class _AgentCompleteProfileFlowScreenState
 
     return Column(
       children: [
-        if (selectedProfileImage != null)
-          Container(
-            width: 92,
-            height: 92,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              image: DecorationImage(
-                image: FileImage(File(selectedProfileImage!.path)),
-                fit: BoxFit.cover,
-              ),
-            ),
-          )
-        else
-          Container(
-            width: 92,
-            height: 92,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isDarkMode
-                  ? Colors.white.withOpacity(0.08)
-                  : Colors.black.withOpacity(0.06),
-            ),
-            child: Center(
-              child: HugeIcon(
-                icon: HugeIcons.strokeRoundedUser,
-                color: primaryTextColor.withOpacity(0.78),
-                size: 28,
-              ),
-            ),
+        Container(
+          width: 92,
+          height: 92,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isDarkMode
+                ? Colors.white.withOpacity(0.08)
+                : Colors.black.withOpacity(0.06),
           ),
+          child: ClipOval(
+            child: () {
+              final localPath = selectedProfileImage?.path.trim() ?? '';
+              if (localPath.isNotEmpty) {
+                return Image.file(
+                  File(localPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Center(
+                    child: HugeIcon(
+                      icon: HugeIcons.strokeRoundedUser,
+                      color: primaryTextColor.withOpacity(0.78),
+                      size: 28,
+                    ),
+                  ),
+                );
+              }
+
+              final remoteUrl = _remoteProfileImageUrl?.trim() ?? '';
+              if (remoteUrl.isNotEmpty) {
+                return Image.network(
+                  remoteUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Center(
+                    child: HugeIcon(
+                      icon: HugeIcons.strokeRoundedUser,
+                      color: primaryTextColor.withOpacity(0.78),
+                      size: 28,
+                    ),
+                  ),
+                );
+              }
+
+              return Center(
+                child: HugeIcon(
+                  icon: HugeIcons.strokeRoundedUser,
+                  color: primaryTextColor.withOpacity(0.78),
+                  size: 28,
+                ),
+              );
+            }(),
+          ),
+        ),
         const SizedBox(height: 20),
         summaryRow(
           icon: HugeIcons.strokeRoundedUser,
@@ -717,14 +770,7 @@ class _AgentCompleteProfileFlowScreenState
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: _goBack,
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: primaryTextColor.withOpacity(0.78),
-            size: 18,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode, onPressed: _goBack),
         title: Text(
           'Complete Profile',
           style: TextStyle(

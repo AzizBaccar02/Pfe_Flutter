@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../../conf/app_colors.dart';
+import '../client/widgets/client_home_theme.dart';
 
 class HomeHeroCard extends StatelessWidget {
   final bool isDarkMode;
@@ -17,55 +18,18 @@ class HomeHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = AppColors.accent;
-    const accentSoft = AppColors.accentSoft;
-    const accentDeep = AppColors.accentDeep;
-
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.68)
-        : Colors.black.withOpacity(0.68);
-
-    final neutralIconColor = isDarkMode
-        ? Colors.white.withOpacity(0.78)
-        : Colors.black.withOpacity(0.78);
+    final primaryText = ClientHomeTheme.primaryText(isDarkMode);
+    final secondaryText = ClientHomeTheme.secondaryText(isDarkMode);
+    final accent = ClientHomeTheme.accent(isDarkMode);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: isDarkMode
-            ? const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF1A1A1A),
-                  Color(0xFF111111),
-                  Color(0xFF1E1E1E),
-                ],
-              )
-            : const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFFF9F9F9),
-                  Color(0xFFF1F1F1),
-                  Color(0xFFF7F7F7),
-                ],
-              ),
-        boxShadow: [
-          BoxShadow(
-            color: isDarkMode
-                ? Colors.black.withOpacity(0.22)
-                : Colors.black.withOpacity(0.06),
-            blurRadius: 22,
-            offset: const Offset(0, 10),
-          ),
-        ],
-        border: Border.all(
-          color: accent.withOpacity(isDarkMode ? 0.14 : 0.20),
-        ),
+        color: ClientHomeTheme.cardBackground(isDarkMode),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ClientHomeTheme.cardBorder(isDarkMode)),
+        boxShadow: ClientHomeTheme.cardShadow(isDarkMode),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,114 +37,100 @@ class HomeHeroCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                height: 42,
-                width: 42,
+                height: 40,
+                width: 40,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                   color: isDarkMode
-                      ? accent.withOpacity(0.12)
-                      : accent.withOpacity(0.14),
+                      ? AppColors.accent.withValues(alpha: 0.14)
+                      : AppColors.accentSurface,
                 ),
                 child: Center(
                   child: HugeIcon(
                     icon: HugeIcons.strokeRoundedWork,
-                    color: neutralIconColor,
+                    color: accent,
                     size: 18,
                   ),
                 ),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(6),
                   color: isDarkMode
-                      ? accent.withOpacity(0.10)
-                      : accent.withOpacity(0.12),
-                  border: Border.all(
-                    color: accent.withOpacity(isDarkMode ? 0.22 : 0.28),
-                  ),
+                      ? AppColors.accent.withValues(alpha: 0.12)
+                      : AppColors.accentSurface,
                 ),
                 child: Text(
-                  'Client Dashboard',
+                  'CLIENT',
                   style: TextStyle(
-                    color: neutralIconColor,
-                    fontSize: 12,
+                    color: accent,
+                    fontSize: 10,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    height: 1,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 20),
           Text(
-            'Welcome back,',
+            'Welcome back',
             style: TextStyle(
-              color: secondaryTextColor,
-              fontSize: 14,
+              color: secondaryText,
+              fontSize: 13,
               fontWeight: FontWeight.w500,
+              letterSpacing: 0.15,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             clientName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: primaryTextColor,
-              fontSize: 28,
-              fontWeight: FontWeight.w800,
-              height: 1.15,
+              color: primaryText,
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.6,
+              height: 1.2,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Text(
-            'Create offers, track activity, and connect with interested agents in one place.',
+            'Publish offers, monitor responses, and chat with agents from one workspace.',
             style: TextStyle(
-              color: secondaryTextColor,
-              fontSize: 14,
+              color: secondaryText,
+              fontSize: 13.5,
               height: 1.5,
+              fontWeight: FontWeight.w400,
             ),
           ),
-          const SizedBox(height: 18),
-          GestureDetector(
-            onTap: onCreateOfferTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                gradient: const LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    accentSoft,
-                    accent,
-                  ],
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: FilledButton.icon(
+              onPressed: onCreateOfferTap,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withOpacity(0.26),
-                    blurRadius: 16,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  HugeIcon(
-                    icon: HugeIcons.strokeRoundedAdd01,
-                    color: accentDeep,
-                    size: 18,
-                  ),
-                  SizedBox(width: 10),
-                  Text(
-                    'Create Offer',
-                    style: TextStyle(
-                      color: accentDeep,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
+              icon: const Icon(Icons.add_rounded, size: 20),
+              label: const Text(
+                'Create offer',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                ),
               ),
             ),
           ),

@@ -7,48 +7,17 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../conf/api_config.dart';
 import '../models/chat_conversation_summary_model.dart';
 import '../models/chat_message_model.dart';
 import 'auth_service.dart';
 
 class ChatService {
-  static String get _baseUrl {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8000';
-    }
+  static String get _baseUrl => ApiConfig.httpBaseUrl;
 
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'http://10.0.2.2:8000';
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        return 'http://127.0.0.1:8000';
-      default:
-        return 'http://127.0.0.1:8000';
-    }
-  }
+  static String get _socketBaseUrl => ApiConfig.wsBaseUrl;
 
-  static String get _socketBaseUrl {
-    if (kIsWeb) {
-      return 'ws://127.0.0.1:8000';
-    }
-
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'ws://10.0.2.2:8000';
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        return 'ws://127.0.0.1:8000';
-      default:
-        return 'ws://127.0.0.1:8000';
-    }
-  }
-
-  static Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+  static Uri _uri(String path) => ApiConfig.httpUri(path);
 
   static Future<WebSocketChannel> connectToChatSocket({
     required int chatId,
@@ -105,6 +74,19 @@ class ChatService {
 
   static void _log(String message) {
     debugPrint('[CHAT_SERVICE] $message');
+  }
+
+  static ChatMessageModel _messageFromJson(
+    Map<String, dynamic> json,
+    ChatConversationSummaryModel chat,
+  ) {
+    return ChatMessageModel.fromJson(
+      json: json,
+      clientId: chat.client?.id ?? 0,
+      agentId: chat.agent?.id ?? 0,
+      clientUserId: chat.client?.userId,
+      agentUserId: chat.agent?.userId,
+    );
   }
 
   static Future<Map<String, String>> _authHeaders() async {
@@ -226,16 +208,12 @@ class ChatService {
       throw const ChatServiceException('Invalid messages response from server.');
     }
 
-    final clientId = chat.client?.id ?? 0;
-    final agentId = chat.agent?.id ?? 0;
-
     final messages = decoded
         .whereType<Map>()
         .map(
-          (item) => ChatMessageModel.fromJson(
-            json: Map<String, dynamic>.from(item),
-            clientId: clientId,
-            agentId: agentId,
+          (item) => _messageFromJson(
+            Map<String, dynamic>.from(item),
+            chat,
           ),
         )
         .toList();
@@ -300,17 +278,13 @@ class ChatService {
 
     final rawMessages = decoded['results'];
 
-    final clientId = chat.client?.id ?? 0;
-    final agentId = chat.agent?.id ?? 0;
-
     final messages = rawMessages is List
         ? rawMessages
             .whereType<Map>()
             .map(
-              (item) => ChatMessageModel.fromJson(
-                json: Map<String, dynamic>.from(item),
-                clientId: clientId,
-                agentId: agentId,
+              (item) => _messageFromJson(
+                Map<String, dynamic>.from(item),
+                chat,
               ),
             )
             .toList()
@@ -365,11 +339,7 @@ class ChatService {
       throw const ChatServiceException('Invalid message response from server.');
     }
 
-    final message = ChatMessageModel.fromJson(
-      json: decoded,
-      clientId: chat.client?.id ?? 0,
-      agentId: chat.agent?.id ?? 0,
-    );
+    final message = _messageFromJson(decoded, chat);
 
     _log(
       'Parsed sent message => id: ${message.id}, '
@@ -420,11 +390,7 @@ class ChatService {
       );
     }
 
-    final message = ChatMessageModel.fromJson(
-      json: decoded,
-      clientId: chat.client?.id ?? 0,
-      agentId: chat.agent?.id ?? 0,
-    );
+    final message = _messageFromJson(decoded, chat);
 
     _log(
       'Parsed updated message => id: ${message.id}, '
@@ -437,7 +403,7 @@ class ChatService {
     return message;
   }
 
-  static Future<int> deleteMessage({
+  static Future<ChatMessageDeleteResult> deleteMessage({
     required ChatConversationSummaryModel chat,
     required int messageId,
   }) async {
@@ -455,53 +421,62 @@ class ChatService {
 
     _log('Decoded delete message response: $decoded');
 
-    final deletedMessageId = decoded is Map<String, dynamic>
-        ? (_parseInt(decoded['deletedMessageId']) ?? messageId)
-        : messageId;
+    if (decoded is! Map<String, dynamic>) {
+      throw const ChatServiceException(
+        'Invalid delete message response from server.',
+      );
+    }
 
-    _log('Parsed deleted message id: $deletedMessageId');
+    final deletedMessageId =
+        _parseInt(decoded['deletedMessageId']) ?? messageId;
+    final deletedForSelfOnly = decoded['deletedForSelfOnly'] == true ||
+        decoded['hiddenForSender'] == true;
+
+    _log(
+      'Parsed deleted message id: $deletedMessageId, '
+      'deletedForSelfOnly: $deletedForSelfOnly',
+    );
     _log('================ DELETE MESSAGE DEBUG END ==================');
 
-    return deletedMessageId;
+    return ChatMessageDeleteResult(
+      messageId: deletedMessageId,
+      deletedForSelfOnly: deletedForSelfOnly,
+    );
   }
 
-  static Future<void> deleteChat({
+  static Future<ChatDeleteResult> deleteChat({
     required int chatId,
   }) async {
     _log('================ DELETE CHAT DEBUG START ================');
     _log('Chat ID: $chatId');
+    _log('Delete chat URL: ${_uri('/api/chats/$chatId/delete/')}');
 
-    final candidates = [
-      '/api/chats/$chatId/delete/',
-      '/api/chats/$chatId/',
-    ];
+    final decoded = await _deleteJson(
+      path: '/api/chats/$chatId/delete/',
+      expectedStatusCode: 200,
+    );
 
-    Object? lastError;
+    _log('Decoded delete chat response: $decoded');
 
-    for (final path in candidates) {
-      for (final statusCode in [200, 204]) {
-        try {
-          _log('Trying DELETE $path (expect $statusCode)');
-          await _deleteJson(
-            path: path,
-            expectedStatusCode: statusCode,
-          );
-          _log('================ DELETE CHAT DEBUG END ==================');
-          return;
-        } catch (e) {
-          lastError = e;
-          _log('DELETE failed for $path ($statusCode): $e');
-        }
-      }
+    if (decoded is! Map<String, dynamic>) {
+      throw const ChatServiceException(
+        'Invalid delete conversation response from server.',
+      );
     }
 
+    final deletedChatId = _parseInt(decoded['deletedChatId']) ?? chatId;
+    final deletedForSelfOnly = decoded['deletedForSelfOnly'] == true;
+
+    _log(
+      'Parsed deleted chat id: $deletedChatId, '
+      'deletedForSelfOnly: $deletedForSelfOnly',
+    );
     _log('================ DELETE CHAT DEBUG END ==================');
 
-    if (lastError is ChatServiceException) {
-      throw lastError;
-    }
-
-    throw const ChatServiceException('Unable to delete conversation.');
+    return ChatDeleteResult(
+      chatId: deletedChatId,
+      deletedForSelfOnly: deletedForSelfOnly,
+    );
   }
 
   /// Closes the offer linked to this chat (`POST` or `PATCH` `/api/chats/{id}/close/`).
@@ -842,6 +817,26 @@ class ChatService {
 
     return 'Something went wrong. Please try again.';
   }
+}
+
+class ChatDeleteResult {
+  final int chatId;
+  final bool deletedForSelfOnly;
+
+  const ChatDeleteResult({
+    required this.chatId,
+    required this.deletedForSelfOnly,
+  });
+}
+
+class ChatMessageDeleteResult {
+  final int messageId;
+  final bool deletedForSelfOnly;
+
+  const ChatMessageDeleteResult({
+    required this.messageId,
+    required this.deletedForSelfOnly,
+  });
 }
 
 class ChatMessagesPage {

@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../../../models/client_offer_model.dart';
+import '../../../widgets/offer_cover_image.dart';
 import 'home_info_pill.dart';
 
 class HomeRecentOfferCard extends StatelessWidget {
@@ -50,9 +49,11 @@ class HomeRecentOfferCard extends StatelessWidget {
               child: SizedBox(
                 height: 177,
                 width: double.infinity,
-                child: _RecentOfferImage(
-                  imagePath: imagePath!,
+                child: OfferCoverImage(
+                  imageUrl: imagePath,
                   isDarkMode: isDarkMode,
+                  placeholderColor:
+                      isDarkMode ? const Color(0xFF222222) : const Color(0xFFEAEAEA),
                 ),
               ),
             ),
@@ -125,85 +126,6 @@ class HomeRecentOfferCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _RecentOfferImage extends StatelessWidget {
-  final String imagePath;
-  final bool isDarkMode;
-
-  const _RecentOfferImage({
-    required this.imagePath,
-    required this.isDarkMode,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final fallbackColor =
-        isDarkMode ? const Color(0xFF222222) : const Color(0xFFEAEAEA);
-
-    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-      return Image.network(
-        imagePath,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) {
-          return _ImageFallback(
-            color: fallbackColor,
-            isDarkMode: isDarkMode,
-          );
-        },
-      );
-    }
-
-    if (imagePath.startsWith('assets/')) {
-      return Image.asset(
-        imagePath,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) {
-          return _ImageFallback(
-            color: fallbackColor,
-            isDarkMode: isDarkMode,
-          );
-        },
-      );
-    }
-
-    return Image.file(
-      File(imagePath),
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) {
-        return _ImageFallback(
-          color: fallbackColor,
-          isDarkMode: isDarkMode,
-        );
-      },
-    );
-  }
-}
-
-class _ImageFallback extends StatelessWidget {
-  final Color color;
-  final bool isDarkMode;
-
-  const _ImageFallback({
-    required this.color,
-    required this.isDarkMode,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: color,
-      alignment: Alignment.center,
-      child: Text(
-        'Image unavailable',
-        style: TextStyle(
-          color: isDarkMode ? Colors.white54 : Colors.black45,
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-        ),
       ),
     );
   }

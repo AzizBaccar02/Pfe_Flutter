@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -79,7 +81,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: Colors.green,
+          backgroundColor: AppColors.accent,
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -123,6 +125,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
         backgroundColor: isDarkMode ? Colors.black : Colors.white,
         foregroundColor: isDarkMode ? Colors.white : Colors.black,
         elevation: 0,
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Reset Password',
           style: TextStyle(
@@ -132,9 +135,16 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           ),
         ),
       ),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            24 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Form(
             key: _formKey,
             child: Column(

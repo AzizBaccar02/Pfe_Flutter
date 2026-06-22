@@ -1,12 +1,15 @@
 // lib/screens/offers/client/agent_public_profile_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
 import '../../../conf/theme_provider.dart';
 import '../../../models/agent_profile_model.dart';
 import '../../../services/agent_profile_resolver.dart';
+import '../../../utils/agent_identity_privacy.dart';
 import '../../../widgets/agent_profile_avatar.dart';
 
 class AgentPublicProfileScreen extends StatefulWidget {
@@ -17,6 +20,7 @@ class AgentPublicProfileScreen extends StatefulWidget {
   final String? fallbackEmail;
   final String? fallbackPhotoUrl;
   final AgentProfileModel? initialProfile;
+  final bool identityRevealed;
 
   const AgentPublicProfileScreen({
     super.key,
@@ -27,6 +31,7 @@ class AgentPublicProfileScreen extends StatefulWidget {
     this.fallbackEmail,
     this.fallbackPhotoUrl,
     this.initialProfile,
+    this.identityRevealed = true,
   });
 
   @override
@@ -66,7 +71,7 @@ class _AgentPublicProfileScreenState extends State<AgentPublicProfileScreen> {
     }
   }
 
-  String get _displayName {
+  String get _fullName {
     final fromProfile = _profile?.displayName;
     if (fromProfile != null && fromProfile.trim().isNotEmpty) {
       return fromProfile;
@@ -76,7 +81,14 @@ class _AgentPublicProfileScreenState extends State<AgentPublicProfileScreen> {
         : 'Agent';
   }
 
+  String get _displayName {
+    if (widget.identityRevealed) return _fullName;
+    return AgentIdentityPrivacy.publicLabel(_fullName);
+  }
+
   String? get _photoUrl {
+    if (!widget.identityRevealed) return null;
+
     final fromProfile = _profile?.photoUrl;
     if (fromProfile != null && fromProfile.trim().isNotEmpty) {
       return fromProfile;
@@ -84,12 +96,27 @@ class _AgentPublicProfileScreenState extends State<AgentPublicProfileScreen> {
     return widget.fallbackPhotoUrl;
   }
 
+  String? get _email {
+    if (!widget.identityRevealed) return null;
+    return widget.fallbackEmail?.trim().isNotEmpty == true
+        ? widget.fallbackEmail!.trim()
+        : null;
+  }
+
+  String _contactValue(String? value) {
+    if (widget.identityRevealed) {
+      return value?.trim().isNotEmpty == true ? value!.trim() : '—';
+    }
+    return AgentIdentityPrivacy.hiddenContactValue;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
-    final backgroundColor = isDarkMode ? Colors.black : const Color(0xFFF3F4F6);
+    final backgroundColor =
+        isDarkMode ? const Color(0xFF0D0D0D) : const Color(0xFFF3F4F6);
     final cardColor = isDarkMode ? const Color(0xFF141414) : Colors.white;
     final primaryTextColor = isDarkMode ? Colors.white : const Color(0xFF111827);
     final secondaryTextColor =
@@ -103,14 +130,7 @@ class _AgentPublicProfileScreenState extends State<AgentPublicProfileScreen> {
         backgroundColor: backgroundColor,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: accentGreen,
-            size: 18,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Agent profile',
           style: TextStyle(
@@ -124,10 +144,33 @@ class _AgentPublicProfileScreenState extends State<AgentPublicProfileScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: [
+                if (!widget.identityRevealed) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: accentGreen.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: accentGreen.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Text(
+                      AgentIdentityPrivacy.profileGateHint,
+                      style: TextStyle(
+                        color: secondaryTextColor,
+                        fontSize: 13,
+                        height: 1.4,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Center(
                   child: AgentProfileAvatar(
                     photoUrl: _photoUrl,
-                    displayName: _displayName,
+                    displayName: _fullName,
                     radius: 52,
                   ),
                 ),
@@ -143,11 +186,11 @@ class _AgentPublicProfileScreenState extends State<AgentPublicProfileScreen> {
                     ),
                   ),
                 ),
-                if (widget.fallbackEmail?.isNotEmpty == true) ...[
+                if (_email != null) ...[
                   const SizedBox(height: 6),
                   Center(
                     child: Text(
-                      widget.fallbackEmail!,
+                      _email!,
                       style: TextStyle(
                         color: secondaryTextColor,
                         fontSize: 14,
@@ -181,11 +224,10 @@ class _AgentPublicProfileScreenState extends State<AgentPublicProfileScreen> {
                     _InfoRow(
                       icon: HugeIcons.strokeRoundedCall02,
                       label: 'Phone',
-                      value: profile?.phone.isNotEmpty == true
-                          ? profile!.phone
-                          : '—',
+                      value: _contactValue(profile?.phone),
                       primaryTextColor: primaryTextColor,
                       secondaryTextColor: secondaryTextColor,
+                      muted: !widget.identityRevealed,
                     ),
                   ],
                 ),
@@ -282,6 +324,7 @@ class _InfoRow extends StatelessWidget {
   final String value;
   final Color primaryTextColor;
   final Color secondaryTextColor;
+  final bool muted;
 
   const _InfoRow({
     required this.icon,
@@ -289,6 +332,7 @@ class _InfoRow extends StatelessWidget {
     required this.value,
     required this.primaryTextColor,
     required this.secondaryTextColor,
+    this.muted = false,
   });
 
   @override
@@ -314,9 +358,10 @@ class _InfoRow extends StatelessWidget {
                 Text(
                   value,
                   style: TextStyle(
-                    color: primaryTextColor,
+                    color: muted ? secondaryTextColor : primaryTextColor,
                     fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: muted ? FontWeight.w600 : FontWeight.w700,
+                    fontStyle: muted ? FontStyle.italic : FontStyle.normal,
                   ),
                 ),
               ],

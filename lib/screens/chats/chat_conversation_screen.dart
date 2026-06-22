@@ -4,6 +4,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -12,86 +14,40 @@ import '../../models/chat_conversation_summary_model.dart';
 import '../../models/chat_message_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_conversation_display_name_service.dart';
+import '../../services/chat_active_conversation_tracker.dart';
+import '../../services/chat_local_read_cursor.dart';
 import '../../services/chat_service.dart';
+import '../../utils/chat_peer_media.dart';
 import '../../services/profile_service.dart';
 import 'chat_peer_profile_screen.dart';
 import 'widgets/chat_offer_label.dart';
+import 'widgets/edit_message_dialog.dart';
 import 'widgets/message_bubble.dart';
 import 'widgets/message_composer.dart';
-
-/// Slate-neutral scheme for this screen so Material defaults (selection, ink,
-/// primary buttons) do not pick up a blue primary from the app theme.
-ThemeData _chatConversationScreenTheme(
-  BuildContext context,
-  bool isDarkMode,
-) {
-  final base = Theme.of(context);
-  const accentGreen = Color(0xFF22C55E);
-
-  final scheme = base.colorScheme.copyWith(
-    primary: isDarkMode ? const Color(0xFFA1A1AA) : const Color(0xFF52525B),
-    onPrimary: isDarkMode ? const Color(0xFF18181B) : Colors.white,
-    primaryContainer: isDarkMode
-        ? const Color(0xFF27272A)
-        : const Color(0xFFE4E4E7),
-    onPrimaryContainer:
-        isDarkMode ? const Color(0xFFF4F4F5) : const Color(0xFF18181B),
-    secondary: accentGreen,
-    onSecondary: Colors.white,
-    secondaryContainer: accentGreen.withOpacity(isDarkMode ? 0.18 : 0.14),
-    onSecondaryContainer:
-        isDarkMode ? const Color(0xFFE7E5E4) : const Color(0xFF14532D),
-    surface: isDarkMode ? const Color(0xFF000000) : const Color(0xFFF4F4F5),
-    onSurface: isDarkMode ? Colors.white : const Color(0xFF18181B),
-    onSurfaceVariant: isDarkMode
-        ? Colors.white.withOpacity(0.62)
-        : const Color(0xFF52525B),
-    outline: isDarkMode
-        ? Colors.white.withOpacity(0.12)
-        : Colors.black.withOpacity(0.12),
-    outlineVariant: isDarkMode
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.08),
-  );
-
-  return base.copyWith(
-    colorScheme: scheme,
-    splashColor: (isDarkMode ? Colors.white : Colors.black).withOpacity(0.07),
-    highlightColor:
-        (isDarkMode ? Colors.white : Colors.black).withOpacity(0.04),
-    textSelectionTheme: TextSelectionThemeData(
-      cursorColor: accentGreen,
-      selectionColor: isDarkMode
-          ? const Color(0xFF3F3F46).withOpacity(0.88)
-          : accentGreen.withOpacity(0.26),
-      selectionHandleColor:
-          isDarkMode ? const Color(0xFFD4D4D8) : const Color(0xFF3F3F46),
-    ),
-    progressIndicatorTheme: ProgressIndicatorThemeData(
-      color: accentGreen,
-      linearTrackColor: isDarkMode
-          ? Colors.white.withOpacity(0.08)
-          : Colors.black.withOpacity(0.06),
-      circularTrackColor: isDarkMode
-          ? Colors.white.withOpacity(0.08)
-          : Colors.black.withOpacity(0.06),
-    ),
-  );
-}
 
 Widget _chatPeerAvatar({
   required ChatConversationSummaryModel chat,
   required bool isDarkMode,
   required double radius,
   int viewerUserId = 0,
+  String viewerRole = '',
 }) {
+  final photoRaw = resolveChatPeerPhotoRaw(
+    chat: chat,
+    viewerUserId: viewerUserId,
+    viewerRole: viewerRole,
+  );
   final resolved = ProfileService.resolveMediaUrl(
-    chat.resolvePeerPhotoUrl(viewerUserId: viewerUserId).trim(),
+    photoRaw.isEmpty ? null : photoRaw,
   );
   final diameter = radius * 2;
   final bg = isDarkMode ? Colors.black : const Color(0xFFE5E7EB);
   final fg = isDarkMode ? Colors.white : const Color(0xFF111827);
-  final initials = chat.displayInitials;
+  final initials = chat.peerDisplayInitialsForViewer(
+    viewerUserId,
+    viewerRole: viewerRole,
+  );
+  final imageCacheKey = 'conv-peer-${chat.id}-$photoRaw';
   final fontSize = (radius * 0.52).clamp(11.0, 34.0);
 
   Widget initialsLabel() {
@@ -113,9 +69,11 @@ Widget _chatPeerAvatar({
         color: bg,
         child: Image.network(
           resolved,
+          key: ValueKey(imageCacheKey),
           width: diameter,
           height: diameter,
           fit: BoxFit.cover,
+          gaplessPlayback: true,
           errorBuilder: (_, _, _) => Center(child: initialsLabel()),
         ),
       ),
@@ -209,10 +167,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   String? _errorMessage;
   int _currentUserId = 0;
+  String _viewerRole = '';
   int? _nextBeforeMessageId;
   int _newMessagesCount = 0;
 
   List<ChatMessageModel> _messages = [];
+
+  bool _isAppInForeground = true;
+
+  int? _lastLocalMessageEditId;
+  DateTime? _lastLocalMessageEditAt;
 
   /// Local nickname or server peer name for the app bar / quick info.
   String _conversationHeaderTitle = '';
@@ -220,15 +184,69 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   int get _clientId => _conversation.client?.id ?? 0;
   int get _agentId => _conversation.agent?.id ?? 0;
 
-  /// True when [readerId] is the other participant in this chat (Django user id
-  /// or profile id, matching [ChatUserSummary]).
+  /// True when [readerId] is the other participant (Django user id or profile id).
   bool _socketReaderIsChatPeer(int readerId) {
     if (readerId <= 0) return false;
-    final peer = _conversation.otherUser;
-    if (peer == null) return false;
-    final uid = peer.userId;
-    if (uid != null && uid > 0 && readerId == uid) return true;
-    return peer.id > 0 && readerId == peer.id;
+    if (readerId == _currentUserId) return false;
+
+    for (final user in [
+      _conversation.otherUser,
+      _conversation.client,
+      _conversation.agent,
+    ]) {
+      if (user == null) continue;
+      if (user.id > 0 && readerId == user.id) return true;
+      final uid = user.userId;
+      if (uid != null && uid > 0 && readerId == uid) return true;
+    }
+
+    return false;
+  }
+
+  bool _messageIsFromViewer(ChatMessageModel message) {
+    if (message.senderId <= 0 || _currentUserId <= 0) return false;
+    if (message.senderId == _currentUserId) return true;
+
+    if (_viewerRole == 'AGENT') {
+      if (message.isFromAgent) return true;
+
+      final agent = _conversation.agent;
+      if (agent == null) return false;
+      if (message.senderId == agent.id) return true;
+      final uid = agent.userId;
+      if (uid != null && uid > 0 && message.senderId == uid) return true;
+      return false;
+    }
+
+    if (message.isFromClient) return true;
+
+    final client = _conversation.client;
+    if (client == null) return false;
+    if (message.senderId == client.id) return true;
+    final uid = client.userId;
+    if (uid != null && uid > 0 && message.senderId == uid) return true;
+    return false;
+  }
+
+  /// Sender id the API/WebSocket uses for the logged-in participant.
+  int get _outgoingSenderId {
+    if (_viewerRole == 'AGENT') {
+      final agent = _conversation.agent;
+      if (agent != null) {
+        final uid = agent.userId;
+        if (uid != null && uid > 0) return uid;
+        if (agent.id > 0) return agent.id;
+      }
+    } else {
+      final client = _conversation.client;
+      if (client != null) {
+        final uid = client.userId;
+        if (uid != null && uid > 0) return uid;
+        if (client.id > 0) return client.id;
+      }
+    }
+
+    return _currentUserId;
   }
 
   @override
@@ -239,10 +257,30 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     _conversationHeaderTitle = widget.chat.displayName;
     _scrollController.addListener(_handleScroll);
     _bootstrapConversation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateActiveConversationVisibility();
+    });
+  }
+
+  Future<void> _updateLocalReadCursor() async {
+    if (_messages.isEmpty) return;
+
+    var maxId = 0;
+    for (final message in _messages) {
+      if (message.id > maxId) maxId = message.id;
+    }
+
+    if (maxId > 0) {
+      await ChatLocalReadCursor.instance.setLastReadMessageId(
+        _conversation.id,
+        maxId,
+      );
+    }
   }
 
   @override
   void dispose() {
+    ChatActiveConversationTracker.instance.setActive(null, visible: false);
     WidgetsBinding.instance.removeObserver(this);
     _presencePollTimer?.cancel();
     _readReceiptTimer?.cancel();
@@ -256,11 +294,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
   Future<void> _bootstrapConversation() async {
     final storedUserId = await AuthService.getStoredUserId();
+    final storedRole = await AuthService.getStoredRole();
 
     if (!mounted) return;
 
     setState(() {
       _currentUserId = storedUserId ?? 0;
+      _viewerRole = (storedRole ?? '').toUpperCase();
     });
 
     await ChatConversationDisplayNameService.instance.ensureLoaded();
@@ -269,17 +309,61 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
     await _refreshChatSummaryFromServer();
 
-    await _loadInitialMessages(markRead: true);
+    await _loadInitialMessages();
     await _connectSocket();
 
     _startReadReceiptSync();
     _startPeerPresencePolling();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_markMessagesAsReadIfActive());
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateActiveConversationVisibility();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppInForeground = state == AppLifecycleState.resumed;
+    _updateActiveConversationVisibility();
+
     if (state == AppLifecycleState.resumed) {
       _refreshChatSummaryFromServer();
+      unawaited(_markMessagesAsReadIfActive());
+    }
+  }
+
+  bool get _isConversationActive {
+    if (!mounted || !_isAppInForeground) return false;
+
+    final route = ModalRoute.of(context);
+    return route != null && route.isCurrent;
+  }
+
+  void _updateActiveConversationVisibility() {
+    ChatActiveConversationTracker.instance.setActive(
+      _conversation.id,
+      visible: _isConversationActive,
+    );
+  }
+
+  Future<void> _markMessagesAsReadIfActive() async {
+    if (!_isConversationActive) return;
+
+    try {
+      await ChatService.markAllMessagesAsRead(chatId: _conversation.id);
+      await _updateLocalReadCursor();
+      if (mounted) {
+        await _syncReadReceiptsSilently();
+        await _refreshChatSummaryFromServer();
+        await _patchConversationLastMessageReadFromMessages();
+      }
+    } catch (_) {
+      // Read sync is best-effort.
     }
   }
 
@@ -425,6 +509,69 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     return distanceFromBottom <= 130;
   }
 
+  ({double extent, double pixels}) _captureScrollAnchor() {
+    if (!_scrollController.hasClients) {
+      return (extent: 0, pixels: 0);
+    }
+
+    return (
+      extent: _scrollController.position.maxScrollExtent,
+      pixels: _scrollController.position.pixels,
+    );
+  }
+
+  void _restoreScrollAnchor({
+    required double beforeExtent,
+    required double beforePixels,
+  }) {
+    if (!_scrollController.hasClients) return;
+
+    void apply() {
+      if (!_scrollController.hasClients) return;
+
+      final delta = _scrollController.position.maxScrollExtent - beforeExtent;
+      _scrollController.jumpTo(
+        (beforePixels + delta).clamp(
+          _scrollController.position.minScrollExtent,
+          _scrollController.position.maxScrollExtent,
+        ),
+      );
+    }
+
+    apply();
+    WidgetsBinding.instance.addPostFrameCallback((_) => apply());
+  }
+
+  void _setMessagesPreservingScroll(
+    List<ChatMessageModel> nextMessages, {
+    required bool scrollToBottomIfNear,
+  }) {
+    if (!mounted) return;
+
+    final wasNearBottom = _isNearBottom();
+    final anchor = _captureScrollAnchor();
+
+    setState(() {
+      _messages = _sortMessages(nextMessages);
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+
+      if (scrollToBottomIfNear && wasNearBottom) {
+        _scrollToBottom(force: true);
+        return;
+      }
+
+      if (!wasNearBottom) {
+        _restoreScrollAnchor(
+          beforeExtent: anchor.extent,
+          beforePixels: anchor.pixels,
+        );
+      }
+    });
+  }
+
   Future<void> _connectSocket() async {
     try {
       await _socketSubscription?.cancel();
@@ -481,7 +628,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         limit: _pageSize,
       );
 
-      if (markRead) {
+      if (markRead && _isConversationActive) {
         await ChatService.markAllMessagesAsRead(chatId: _conversation.id);
       }
 
@@ -495,7 +642,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       });
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToBottom(jump: true);
+        _scrollToBottom(jump: true, force: true);
       });
     } on ChatServiceException catch (e) {
       if (!mounted) return;
@@ -528,8 +675,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
     if (!_scrollController.hasClients) return;
 
-    final previousMaxScrollExtent = _scrollController.position.maxScrollExtent;
-    final previousPixels = _scrollController.position.pixels;
+    final anchor = _captureScrollAnchor();
 
     setState(() {
       _isLoadingOlderMessages = true;
@@ -555,25 +701,26 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       });
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollController.hasClients) return;
-
-        final newMaxScrollExtent = _scrollController.position.maxScrollExtent;
-        final addedHeight = newMaxScrollExtent - previousMaxScrollExtent;
-        final targetOffset = previousPixels + addedHeight;
-
-        _scrollController.jumpTo(
-          targetOffset.clamp(
-            _scrollController.position.minScrollExtent,
-            _scrollController.position.maxScrollExtent,
-          ),
+        _restoreScrollAnchor(
+          beforeExtent: anchor.extent,
+          beforePixels: anchor.pixels,
         );
       });
     } catch (_) {
       // Loading older messages should not break the current conversation view.
     } finally {
       if (mounted) {
+        final loaderAnchor = _captureScrollAnchor();
+
         setState(() {
           _isLoadingOlderMessages = false;
+        });
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _restoreScrollAnchor(
+            beforeExtent: loaderAnchor.extent,
+            beforePixels: loaderAnchor.pixels,
+          );
         });
       }
     }
@@ -637,14 +784,17 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
       for (final freshMessage in page.messages) {
         final alreadyExists = mergedMessages.any(
-          (message) => message.id == freshMessage.id,
+          (message) =>
+              message.id == freshMessage.id ||
+              _isLikelySameTemporaryMessage(message, freshMessage) ||
+              _isDuplicateOutgoingMessage(message, freshMessage),
         );
 
         if (!alreadyExists) {
           changed = true;
           mergedMessages.add(freshMessage);
 
-          if (!wasNearBottom && freshMessage.senderId != _currentUserId) {
+          if (!wasNearBottom && !_messageIsFromViewer(freshMessage)) {
             _newMessagesCount += 1;
           }
         }
@@ -652,15 +802,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
       if (!changed) return;
 
-      setState(() {
-        _messages = _sortMessages(mergedMessages);
-      });
-
-      if (wasNearBottom) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToBottom();
-        });
-      }
+      _setMessagesPreservingScroll(
+        mergedMessages,
+        scrollToBottomIfNear: true,
+      );
+      unawaited(_patchConversationLastMessageReadFromMessages());
     } catch (_) {
       // Silent sync must never disturb the conversation UI.
     } finally {
@@ -672,17 +818,59 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     ChatMessageModel temporaryMessage,
     ChatMessageModel serverMessage,
   ) {
-    if (temporaryMessage.id >= 0) return false;
+    if (temporaryMessage.id >= 0 || serverMessage.id <= 0) return false;
 
-    final sameSender = temporaryMessage.senderId == serverMessage.senderId;
-    final sameText = temporaryMessage.text.trim() == serverMessage.text.trim();
+    if (!_messageIsFromViewer(temporaryMessage)) return false;
+    if (!_messageIsFromViewer(serverMessage)) return false;
 
-    final secondsDiff = serverMessage.sentAt
-        .difference(temporaryMessage.sentAt)
-        .inSeconds
-        .abs();
+    return temporaryMessage.text.trim() == serverMessage.text.trim();
+  }
 
-    return sameSender && sameText && secondsDiff <= 10;
+  bool _isDuplicateOutgoingMessage(
+    ChatMessageModel existing,
+    ChatMessageModel incoming,
+  ) {
+    if (existing.id == incoming.id && incoming.id > 0) return true;
+
+    if (!_messageIsFromViewer(existing) || !_messageIsFromViewer(incoming)) {
+      return false;
+    }
+
+    if (existing.text.trim() != incoming.text.trim()) return false;
+
+    // Optimistic placeholder vs persisted echo — always the same send.
+    if (existing.id <= 0 || incoming.id <= 0) {
+      return true;
+    }
+
+    // Collapse socket + polling echoes (same outgoing text within 2 minutes).
+    final secondsDiff =
+        incoming.sentAt.difference(existing.sentAt).inSeconds.abs();
+    return secondsDiff <= 120;
+  }
+
+  List<ChatMessageModel> _dedupeMessageList(List<ChatMessageModel> messages) {
+    final result = <ChatMessageModel>[];
+
+    for (final message in messages) {
+      final duplicateIndex = result.indexWhere(
+        (existing) =>
+            (existing.id == message.id && message.id > 0) ||
+            _isDuplicateOutgoingMessage(existing, message),
+      );
+
+      if (duplicateIndex < 0) {
+        result.add(message);
+        continue;
+      }
+
+      final existing = result[duplicateIndex];
+      if (existing.id <= 0 && message.id > 0) {
+        result[duplicateIndex] = message;
+      }
+    }
+
+    return result;
   }
 
   void _handleSocketEvent(dynamic event) {
@@ -694,7 +882,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       final data = Map<String, dynamic>.from(decoded);
       final type = data['type']?.toString();
 
-      if (type == 'new_message') {
+      if (type == 'new_message' ||
+          type == 'message_created' ||
+          type == 'chat_message') {
         _handleSocketNewMessage(data);
         return;
       }
@@ -711,11 +901,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
       if (type == 'message_updated' || type == 'chat_message_updated') {
         _handleSocketMessageUpdated(data);
-        return;
-      }
-
-      if (type == 'message_deleted' || type == 'chat_message_deleted') {
-        _handleSocketMessageDeleted(data);
         return;
       }
 
@@ -746,12 +931,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       json: Map<String, dynamic>.from(rawMessage),
       clientId: _clientId,
       agentId: _agentId,
+      clientUserId: _conversation.client?.userId,
+      agentUserId: _conversation.agent?.userId,
     );
 
     if (message.id == 0 && message.text.trim().isEmpty) return;
 
     final wasNearBottom = _isNearBottom();
-    final isIncoming = message.senderId != _currentUserId;
+    final isIncoming = !_messageIsFromViewer(message);
 
     if (!mounted) return;
 
@@ -765,15 +952,20 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         updatedMessages[existingIndex] = message;
         _messages = _sortMessages(updatedMessages);
       } else {
-        final withoutOptimisticDuplicate = _messages.where((item) {
-          final isTemporary = item.id < 0;
-          final sameText = item.text.trim() == message.text.trim();
-          final sameSender = item.senderId == message.senderId;
-
-          return !(isTemporary && sameText && sameSender);
+        final withoutDuplicates = _messages.where((item) {
+          if (item.id == message.id) return false;
+          if (_isLikelySameTemporaryMessage(item, message)) return false;
+          if (_isDuplicateOutgoingMessage(item, message)) return false;
+          if (_messageIsFromViewer(message) &&
+              item.id < 0 &&
+              _messageIsFromViewer(item) &&
+              item.text.trim() == message.text.trim()) {
+            return false;
+          }
+          return true;
         }).toList();
 
-        _messages = _sortMessages([...withoutOptimisticDuplicate, message]);
+        _messages = _sortMessages([...withoutDuplicates, message]);
 
         if (!wasNearBottom && isIncoming) {
           _newMessagesCount += 1;
@@ -781,15 +973,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       }
     });
 
-    if (isIncoming) {
-      ChatService.markAllMessagesAsRead(chatId: _conversation.id).then((_) {
-        _syncReadReceiptsSilently();
-      });
+    if (isIncoming && _isConversationActive) {
+      unawaited(_markMessagesAsReadIfActive());
     }
 
-    if (wasNearBottom || !isIncoming) {
+    if (wasNearBottom) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToBottom();
+        _scrollToBottom(force: true);
       });
     }
   }
@@ -803,18 +993,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     if (!mounted) return;
 
     if (messageId != null) {
-      // Read receipts on bubbles apply only to outgoing messages (peer read).
       if (readerId != null && readerId == _currentUserId) {
         return;
       }
-      if (readerId != null &&
-          readerId != _currentUserId &&
-          !_socketReaderIsChatPeer(readerId)) {
+      if (readerId != null && !_socketReaderIsChatPeer(readerId)) {
         return;
       }
+
       setState(() {
         _messages = _messages.map((message) {
-          if (message.id == messageId && message.senderId == _currentUserId) {
+          if (message.id == messageId && _messageIsFromViewer(message)) {
             return message.copyWith(isRead: true);
           }
 
@@ -822,15 +1010,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         }).toList();
       });
 
+      unawaited(_patchConversationLastMessageReadFromMessages());
       return;
     }
 
-    if (readerId != null &&
-        readerId != _currentUserId &&
-        _socketReaderIsChatPeer(readerId)) {
+    if (readerId == null || _socketReaderIsChatPeer(readerId)) {
       setState(() {
         _messages = _messages.map((message) {
-          if (message.senderId == _currentUserId) {
+          if (_messageIsFromViewer(message)) {
             return message.copyWith(isRead: true);
           }
 
@@ -838,6 +1025,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         }).toList();
       });
 
+      unawaited(_patchConversationLastMessageReadFromMessages());
       return;
     }
 
@@ -849,19 +1037,52 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
     if (!mounted) return;
 
-    if (readerId != null &&
-        readerId != _currentUserId &&
-        _socketReaderIsChatPeer(readerId)) {
+    if (readerId == null || _socketReaderIsChatPeer(readerId)) {
       setState(() {
         _messages = _messages.map((message) {
-          if (message.senderId == _currentUserId) {
+          if (_messageIsFromViewer(message)) {
             return message.copyWith(isRead: true);
           }
 
           return message;
         }).toList();
       });
+
+      unawaited(_patchConversationLastMessageReadFromMessages());
     }
+  }
+
+  /// Keeps list preview in sync when peer read receipts arrive on the socket.
+  Future<void> _patchConversationLastMessageReadFromMessages() async {
+    if (!mounted || _messages.isEmpty) return;
+
+    final lastOutgoing = _messages
+        .where((m) => m.id > 0 && _messageIsFromViewer(m))
+        .fold<ChatMessageModel?>(
+          null,
+          (best, m) => best == null || m.id > best.id ? m : best,
+        );
+
+    if (lastOutgoing == null || !lastOutgoing.isRead) return;
+
+    final last = _conversation.lastMessage;
+    if (last == null ||
+        last.id != lastOutgoing.id ||
+        last.isRead == lastOutgoing.isRead) {
+      return;
+    }
+
+    setState(() {
+      _conversation = _conversation.copyWith(
+        lastMessage: ChatLastMessageSummary(
+          id: last.id,
+          content: last.content,
+          senderId: last.senderId,
+          isRead: true,
+          sentAt: last.sentAt,
+        ),
+      );
+    });
   }
 
   void _handleSocketMessageUpdated(Map<String, dynamic> data) {
@@ -873,15 +1094,50 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
       json: Map<String, dynamic>.from(rawMessage),
       clientId: _clientId,
       agentId: _agentId,
+      clientUserId: _conversation.client?.userId,
+      agentUserId: _conversation.agent?.userId,
     );
 
     if (updatedMessage.id <= 0) return;
     if (!mounted) return;
 
+    if (_lastLocalMessageEditId == updatedMessage.id &&
+        _lastLocalMessageEditAt != null &&
+        DateTime.now().difference(_lastLocalMessageEditAt!) <
+            const Duration(seconds: 3)) {
+      return;
+    }
+
+    _mergeMessageFromSocket(updatedMessage);
+  }
+
+  void _scheduleStateUpdate(VoidCallback update) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(update);
+    });
+  }
+
+  void _applyMessageUpdate(ChatMessageModel updatedMessage) {
+    if (!mounted) return;
+
+    final index = _messages.indexWhere((m) => m.id == updatedMessage.id);
+    if (index < 0) return;
+
+    final existing = _messages[index];
+    if (existing.text == updatedMessage.text &&
+        existing.isRead == updatedMessage.isRead &&
+        existing.isEdited == updatedMessage.isEdited) {
+      return;
+    }
+
+    _lastLocalMessageEditId = updatedMessage.id;
+    _lastLocalMessageEditAt = DateTime.now();
+
     setState(() {
       _messages = _messages.map((message) {
         if (message.id == updatedMessage.id) {
-          return updatedMessage;
+          return _withEditedFlag(existing, updatedMessage);
         }
 
         return message;
@@ -889,23 +1145,42 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     });
   }
 
-  void _handleSocketMessageDeleted(Map<String, dynamic> data) {
-    final rawMessage = data['message'];
+  void _mergeMessageFromSocket(ChatMessageModel updatedMessage) {
+    final index = _messages.indexWhere((m) => m.id == updatedMessage.id);
+    if (index < 0) return;
 
-    final messageId = _parseInt(data['message_id']) ??
-        _parseInt(data['messageId']) ??
-        (rawMessage is Map ? _parseInt(rawMessage['id']) : null);
+    final existing = _messages[index];
+    if (existing.text == updatedMessage.text &&
+        existing.isRead == updatedMessage.isRead &&
+        existing.isEdited == updatedMessage.isEdited) {
+      return;
+    }
 
-    if (messageId == null) return;
-    if (!mounted) return;
+    _scheduleStateUpdate(() {
+      _messages = _messages.map((message) {
+        if (message.id == updatedMessage.id) {
+          return _withEditedFlag(existing, updatedMessage);
+        }
 
-    setState(() {
-      _messages = _messages.where((message) => message.id != messageId).toList();
+        return message;
+      }).toList();
     });
   }
 
-  void _scrollToBottom({bool jump = false}) {
+  ChatMessageModel _withEditedFlag(
+    ChatMessageModel existing,
+    ChatMessageModel updatedMessage,
+  ) {
+    if (updatedMessage.isEdited) return updatedMessage;
+    if (existing.text.trim() != updatedMessage.text.trim()) {
+      return updatedMessage.copyWith(isEdited: true);
+    }
+    return updatedMessage;
+  }
+
+  void _scrollToBottom({bool jump = false, bool force = false}) {
     if (!_scrollController.hasClients) return;
+    if (!force && (_isLoadingOlderMessages || !_isNearBottom())) return;
 
     final target = _scrollController.position.maxScrollExtent + 80;
 
@@ -940,9 +1215,11 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
 
     final optimisticMessage = ChatMessageModel.temporary(
       chatId: _conversation.id,
-      senderId: _currentUserId,
+      senderId: _outgoingSenderId,
       clientId: _clientId,
       agentId: _agentId,
+      clientUserId: _conversation.client?.userId,
+      agentUserId: _conversation.agent?.userId,
       text: text,
     );
 
@@ -951,7 +1228,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom();
+      _scrollToBottom(force: true);
     });
 
     try {
@@ -978,7 +1255,14 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         });
       }
 
-      await _syncReadReceiptsSilently();
+      if (_socketChannel != null && _isSocketConnected) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted) return;
+          unawaited(_syncReadReceiptsSilently());
+        });
+      } else {
+        await _syncReadReceiptsSilently();
+      }
     } on ChatServiceException catch (e) {
       _removeOptimisticMessage(optimisticMessage.id);
       _showErrorSnackBar(e.message);
@@ -1138,8 +1422,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                         'Close',
                         style: TextStyle(
                           color: isDarkMode
-                              ? const Color(0xFF22C55E)
-                              : const Color(0xFF16A34A),
+                              ? AppColors.accent
+                              : AppColors.accent,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -1164,26 +1448,29 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         ),
       ),
     );
-    if (mounted) {
-      await ChatConversationDisplayNameService.instance.ensureLoaded();
-      setState(_recomputeHeaderTitle);
-      await _refreshChatSummaryFromServer();
-    }
+    if (!mounted) return;
+
+    await ChatConversationDisplayNameService.instance.ensureLoaded();
+    if (!mounted) return;
+
+    _scheduleStateUpdate(_recomputeHeaderTitle);
+    await _refreshChatSummaryFromServer();
   }
 
   Future<void> _showMessageActions(ChatMessageModel message) async {
-    if (message.senderId != _currentUserId || message.id <= 0) return;
+    if (!_messageIsFromViewer(message) || message.id <= 0) return;
     if (_isMessageActionRunning) return;
 
     final isDarkMode = context.read<ThemeProvider>().isDarkMode;
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     await showDialog<void>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: true,
       barrierColor: isDarkMode
-          ? Colors.black.withOpacity(0.88)
-          : Colors.black.withOpacity(0.5),
+          ? Colors.black.withValues(alpha: 0.88)
+          : Colors.black.withValues(alpha: 0.5),
       builder: (dialogContext) {
         final cardBg = isDarkMode ? const Color(0xFF000000) : Colors.white;
         final primaryTextColor =
@@ -1250,16 +1537,17 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                   accent: accentGreen,
                   primaryTextColor: primaryTextColor,
                   secondaryTextColor: secondaryTextColor,
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(dialogContext);
-                    Future.microtask(() => _showEditMessageSheet(message));
+                    if (!mounted) return;
+                    await _showEditMessageSheet(message);
                   },
                 ),
                 Divider(height: 1, thickness: 1, indent: 56, color: border),
                 _CenteredMessageActionRow(
                   icon: Icons.delete_outline_rounded,
                   title: 'Delete message',
-                  subtitle: 'Remove this for both users',
+                  subtitle: 'Remove from your view only',
                   accent: const Color(0xFFDC2626),
                   primaryTextColor: primaryTextColor,
                   secondaryTextColor: secondaryTextColor,
@@ -1278,309 +1566,32 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   }
 
   Future<void> _showEditMessageSheet(ChatMessageModel message) async {
-    if (message.senderId != _currentUserId || message.id <= 0) return;
+    if (!_messageIsFromViewer(message) || message.id <= 0) return;
+    if (!mounted) return;
 
-    final controller = TextEditingController(text: message.text);
     final isDarkMode = context.read<ThemeProvider>().isDarkMode;
 
-    await showDialog<void>(
+    final updatedMessage = await showDialog<ChatMessageModel>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: false,
       barrierColor: isDarkMode
-          ? Colors.black.withOpacity(0.88)
-          : Colors.black.withOpacity(0.5),
-      builder: (dialogContext) {
-        var isSaving = false;
-        final shell = isDarkMode ? const Color(0xFF000000) : Colors.white;
-        final primaryTextColor =
-            isDarkMode ? Colors.white : const Color(0xFF111827);
-        final secondaryTextColor = isDarkMode
-            ? Colors.white.withOpacity(0.55)
-            : Colors.black.withOpacity(0.54);
-        final border = isDarkMode
-            ? const Color(0xFF2A2A2A)
-            : const Color(0xFFE5E7EB);
-        final fieldFill =
-            isDarkMode ? const Color(0xFF141414) : const Color(0xFFF3F4F6);
-        const accent = Color(0xFF22C55E);
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final keyboardBottom = MediaQuery.of(context).viewInsets.bottom;
-
-            return Padding(
-              padding: EdgeInsets.only(bottom: keyboardBottom),
-              child: Dialog(
-                backgroundColor: Colors.transparent,
-                insetPadding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  decoration: BoxDecoration(
-                    color: shell,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: border),
-                    boxShadow: [
-                      if (!isDarkMode)
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 24,
-                          offset: const Offset(0, 12),
-                        ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 6, 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Edit message',
-                                style: TextStyle(
-                                  color: primaryTextColor,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: isSaving
-                                  ? null
-                                  : () => Navigator.pop(dialogContext),
-                              visualDensity: VisualDensity.compact,
-                              icon: Icon(
-                                Icons.close_rounded,
-                                color: secondaryTextColor,
-                                size: 22,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Make your changes and save.',
-                            style: TextStyle(
-                              color: secondaryTextColor,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              height: 1.35,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Divider(height: 1, thickness: 1, color: border),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                color: fieldFill,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: border),
-                              ),
-                              child: TextField(
-                                controller: controller,
-                                autofocus: true,
-                                minLines: 3,
-                                maxLines: 6,
-                                cursorColor: accent,
-                                style: TextStyle(
-                                  color: primaryTextColor,
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.4,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Message',
-                                  hintStyle: TextStyle(
-                                    color: secondaryTextColor,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton(
-                                    onPressed: isSaving
-                                        ? null
-                                        : () =>
-                                            Navigator.pop(dialogContext),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: primaryTextColor,
-                                      side: BorderSide(color: border),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Cancel',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: FilledButton(
-                                    onPressed: isSaving
-                                        ? null
-                                        : () async {
-                                            final updatedText =
-                                                controller.text.trim();
-
-                                            if (updatedText.isEmpty) {
-                                              _showErrorSnackBar(
-                                                'Message cannot be empty.',
-                                              );
-                                              return;
-                                            }
-
-                                            if (updatedText ==
-                                                message.text.trim()) {
-                                              Navigator.pop(dialogContext);
-                                              return;
-                                            }
-
-                                            setDialogState(() {
-                                              isSaving = true;
-                                            });
-
-                                            final success =
-                                                await _handleUpdateMessage(
-                                              message: message,
-                                              updatedText: updatedText,
-                                            );
-
-                                            if (!mounted) return;
-                                            if (!dialogContext.mounted) {
-                                              return;
-                                            }
-
-                                            if (success) {
-                                              Navigator.pop(dialogContext);
-                                            } else {
-                                              setDialogState(() {
-                                                isSaving = false;
-                                              });
-                                            }
-                                          },
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: accent,
-                                      foregroundColor: Colors.white,
-                                      disabledBackgroundColor:
-                                          accent.withOpacity(0.45),
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                    ),
-                                    child: isSaving
-                                        ? const SizedBox(
-                                            width: 18,
-                                            height: 18,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: Colors.white,
-                                            ),
-                                          )
-                                        : const Text(
-                                            'Save',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w900,
-                                            ),
-                                          ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
+          ? Colors.black.withValues(alpha: 0.88)
+          : Colors.black.withValues(alpha: 0.5),
+      builder: (_) => EditMessageDialog(
+        message: message,
+        conversation: _conversation,
+        isDarkMode: isDarkMode,
+      ),
     );
 
-    controller.dispose();
-  }
+    if (!mounted || updatedMessage == null) return;
 
-  Future<bool> _handleUpdateMessage({
-    required ChatMessageModel message,
-    required String updatedText,
-  }) async {
-    if (_isMessageActionRunning) return false;
-
-    setState(() {
-      _isMessageActionRunning = true;
-    });
-
-    try {
-      final updatedMessage = await ChatService.updateMessage(
-        chat: _conversation,
-        messageId: message.id,
-        content: updatedText,
-      );
-
-      if (!mounted) return false;
-
-      setState(() {
-        _messages = _messages.map((item) {
-          if (item.id == updatedMessage.id) {
-            return updatedMessage;
-          }
-
-          return item;
-        }).toList();
-      });
-
-      return true;
-    } on ChatServiceException catch (e) {
-      _showErrorSnackBar(e.message);
-      return false;
-    } catch (_) {
-      _showErrorSnackBar('Unable to update message.');
-      return false;
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isMessageActionRunning = false;
-        });
-      }
-    }
+    _applyMessageUpdate(updatedMessage);
   }
 
   Future<void> _confirmDeleteMessage(ChatMessageModel message) async {
-    if (message.senderId != _currentUserId || message.id <= 0) return;
+    if (!_messageIsFromViewer(message) || message.id <= 0) return;
 
     final isDarkMode = context.read<ThemeProvider>().isDarkMode;
 
@@ -1653,7 +1664,8 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                   child: Text(
-                    'This message will be removed from the conversation for both users.',
+                    'This message will be removed only from your side. '
+                    'The other user will still see it.',
                     style: TextStyle(
                       color: secondaryTextColor,
                       height: 1.45,
@@ -1721,33 +1733,30 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   Future<void> _handleDeleteMessage(ChatMessageModel message) async {
     if (_isMessageActionRunning) return;
 
-    setState(() {
-      _isMessageActionRunning = true;
-    });
-
     try {
-      final deletedMessageId = await ChatService.deleteMessage(
+      final result = await ChatService.deleteMessage(
         chat: _conversation,
         messageId: message.id,
       );
 
       if (!mounted) return;
 
-      setState(() {
+      if (!result.deletedForSelfOnly) {
+        _showErrorSnackBar(
+          'This message could not be hidden on your side only.',
+        );
+        return;
+      }
+
+      _scheduleStateUpdate(() {
         _messages = _messages
-            .where((item) => item.id != deletedMessageId)
+            .where((item) => item.id != result.messageId)
             .toList();
       });
     } on ChatServiceException catch (e) {
       _showErrorSnackBar(e.message);
     } catch (_) {
       _showErrorSnackBar('Unable to delete message.');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isMessageActionRunning = false;
-        });
-      }
     }
   }
 
@@ -1779,8 +1788,13 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   }
 
   List<ChatMessageModel> _sortMessages(List<ChatMessageModel> messages) {
-    final sortedMessages = [...messages];
-    sortedMessages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
+    final deduped = _dedupeMessageList(messages);
+    final sortedMessages = [...deduped];
+    sortedMessages.sort((a, b) {
+      final byTime = a.sentAt.compareTo(b.sentAt);
+      if (byTime != 0) return byTime;
+      return a.id.compareTo(b.id);
+    });
     return sortedMessages;
   }
 
@@ -1843,7 +1857,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final backgroundColor =
         isDarkMode ? const Color(0xFF000000) : const Color(0xFFF3F4F6);
@@ -1857,9 +1871,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         ? Colors.white.withOpacity(0.58)
         : Colors.black.withOpacity(0.54);
 
-    return Theme(
-      data: _chatConversationScreenTheme(context, isDarkMode),
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: backgroundColor,
         appBar: AppBar(
           backgroundColor: appBarColor,
@@ -1869,14 +1881,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
           iconTheme: IconThemeData(color: primaryTextColor),
           toolbarHeight: 58,
           leadingWidth: 42,
-          leading: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: Icon(
-              Icons.arrow_back_ios_new_rounded,
-              color: primaryTextColor.withOpacity(0.92),
-              size: 18,
-            ),
-          ),
+          leading: AppBackButton(isDarkMode: isDarkMode),
           titleSpacing: 0,
           title: Row(
             children: [
@@ -1891,6 +1896,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
                     isDarkMode: isDarkMode,
                     radius: 19,
                     viewerUserId: _currentUserId,
+                    viewerRole: _viewerRole,
                   ),
                   Positioned(
                     right: -1,
@@ -1975,7 +1981,6 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -2012,12 +2017,16 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
         isDarkMode: isDarkMode,
         isPeerOnline: _conversation.peerOnlineForViewer(_currentUserId),
         viewerUserId: _currentUserId,
+        viewerRole: _viewerRole,
       );
     }
 
     final timelineItems = _buildTimelineItems(_messages);
-    final peerPhotoRaw =
-        _conversation.resolvePeerPhotoUrl(viewerUserId: _currentUserId).trim();
+    final peerPhotoRaw = resolveChatPeerPhotoRaw(
+      chat: _conversation,
+      viewerUserId: _currentUserId,
+      viewerRole: _viewerRole,
+    );
     final peerAvatarUrl = ProfileService.resolveMediaUrl(
       peerPhotoRaw.isEmpty ? null : peerPhotoRaw,
     );
@@ -2056,7 +2065,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
               }
 
               final message = item.message!;
-              final isMine = message.senderId == _currentUserId;
+              final isMine = _messageIsFromViewer(message);
 
               return MessageBubble(
                 message: message,
@@ -2079,7 +2088,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen>
             bottom: 14,
             child: Center(
               child: GestureDetector(
-                onTap: () => _scrollToBottom(),
+                onTap: () => _scrollToBottom(force: true),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -2267,19 +2276,19 @@ class _TopHistoryLoader extends StatelessWidget {
       return const SizedBox(height: 8);
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      height: isVisible ? 46 : 12,
-      alignment: Alignment.center,
+    return SizedBox(
+      height: hasOlderMessages ? 46 : 8,
       child: isVisible
-          ? SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.2,
-                color: isDarkMode
-                    ? Colors.white.withOpacity(0.72)
-                    : Colors.black.withOpacity(0.48),
+          ? Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.2,
+                  color: isDarkMode
+                      ? Colors.white.withOpacity(0.72)
+                      : Colors.black.withOpacity(0.48),
+                ),
               ),
             )
           : const SizedBox.shrink(),
@@ -2334,6 +2343,7 @@ class _EmptyConversationState extends StatelessWidget {
   final bool isDarkMode;
   final bool isPeerOnline;
   final int viewerUserId;
+  final String viewerRole;
 
   const _EmptyConversationState({
     required this.chat,
@@ -2341,6 +2351,7 @@ class _EmptyConversationState extends StatelessWidget {
     required this.isDarkMode,
     required this.isPeerOnline,
     required this.viewerUserId,
+    required this.viewerRole,
   });
 
   static String? _formatBudgetLine(ChatOfferSummary? offer) {
@@ -2362,7 +2373,7 @@ class _EmptyConversationState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
     const cardBlack = Color(0xFF000000);
     const insetBlack = Color(0xFF0D0D0D);
 
@@ -2455,6 +2466,7 @@ class _EmptyConversationState extends StatelessWidget {
                           isDarkMode: isDarkMode,
                           radius: 46,
                           viewerUserId: viewerUserId,
+                          viewerRole: viewerRole,
                         ),
                         Positioned(
                           right: 6,
@@ -2741,7 +2753,7 @@ class _ConversationErrorState extends StatelessWidget {
               ElevatedButton(
                 onPressed: onRetry,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF22C55E),
+                  backgroundColor: AppColors.accent,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(

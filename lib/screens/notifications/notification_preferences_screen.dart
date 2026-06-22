@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../conf/app_colors.dart';
 import '../../conf/theme_provider.dart';
 import '../settings/widgets/settings_section_title.dart';
 import '../settings/widgets/settings_switch_tile.dart';
@@ -26,7 +27,7 @@ class _NotificationPreferencesScreenState
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
     final cardColor =
@@ -49,14 +50,7 @@ class _NotificationPreferencesScreenState
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: primaryTextColor,
-            size: 20,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         centerTitle: true,
         title: Text(
           'Notification Preferences',

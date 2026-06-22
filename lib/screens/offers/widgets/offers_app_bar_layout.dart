@@ -2,15 +2,32 @@ import 'package:flutter/material.dart';
 
 import 'offers_app_bar.dart';
 
-/// Fixed app bar metrics — same on all phone sizes.
+/// Shared app bar metrics.
 abstract final class OffersAppBarLayout {
-  static const double height = 64;
+  static const double height = kToolbarHeight;
+  static const double dividerHeight = 0;
+  static const double totalHeight = height + dividerHeight;
   static const double horizontalPadding = 16;
-  static const double actionSize = 48;
-  static const double iconSize = 22;
-  static const double avatarOuter = 48;
-  static const double avatarInner = 38;
+  static const double actionSize = 40;
+  static const double iconSize = 20;
+  static const double actionRadius = 12;
+  static const double avatarSize = 34;
+  static const double avatarTouchSize = 40;
   static const double hideDistance = 80;
+
+  /// Top inset for overlays (status bar + app bar).
+  static double headerHeight(BuildContext context) {
+    return MediaQuery.paddingOf(context).top + totalHeight;
+  }
+
+  @Deprecated('Use totalHeight')
+  static const double toolbarHeight = totalHeight;
+
+  @Deprecated('Use avatarSize')
+  static const double avatarOuter = avatarTouchSize;
+
+  @Deprecated('Use avatarSize')
+  static const double avatarInner = avatarSize;
 }
 
 /// Hides the app bar when scrolling down, reveals when scrolling up.
@@ -63,6 +80,49 @@ class OffersAppBarScrollBehavior {
   }
 }
 
+/// Home-tab header overlay (collapses on scroll).
+class OffersAppBarOverlay extends StatelessWidget {
+  final bool isDarkMode;
+  final int notificationUnreadCount;
+  final double hideProgress;
+  final VoidCallback onProfileTap;
+  final VoidCallback onNotificationTap;
+
+  const OffersAppBarOverlay({
+    super.key,
+    required this.isDarkMode,
+    required this.onProfileTap,
+    required this.onNotificationTap,
+    this.notificationUnreadCount = 0,
+    this.hideProgress = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = hideProgress.clamp(0.0, 1.0);
+    final visibleHeight = OffersAppBarLayout.totalHeight * (1 - progress);
+
+    return ClipRect(
+      child: Align(
+        alignment: Alignment.topCenter,
+        heightFactor: visibleHeight <= 0 ? 0 : 1,
+        child: SizedBox(
+          height: visibleHeight > 0 ? visibleHeight : 0,
+          child: Opacity(
+            opacity: 1 - progress,
+            child: OffersAppBar(
+              isDarkMode: isDarkMode,
+              notificationUnreadCount: notificationUnreadCount,
+              onProfileTap: onProfileTap,
+              onNotificationTap: onNotificationTap,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class CollapsibleOffersAppBar extends StatelessWidget
     implements PreferredSizeWidget {
   final bool isDarkMode;
@@ -83,29 +143,30 @@ class CollapsibleOffersAppBar extends StatelessWidget
   });
 
   @override
-  Size get preferredSize {
-    if (!collapsible) {
-      return const Size.fromHeight(OffersAppBarLayout.height);
-    }
-
-    final visibleHeight =
-        OffersAppBarLayout.height * (1 - hideProgress.clamp(0.0, 1.0));
-
-    return Size.fromHeight(visibleHeight);
-  }
+  Size get preferredSize =>
+      const Size.fromHeight(OffersAppBarLayout.totalHeight);
 
   @override
   Widget build(BuildContext context) {
-    final opacity = collapsible ? (1 - hideProgress).clamp(0.0, 1.0) : 1.0;
+    if (!collapsible) {
+      return OffersAppBar(
+        isDarkMode: isDarkMode,
+        notificationUnreadCount: notificationUnreadCount,
+        onProfileTap: onProfileTap,
+        onNotificationTap: onNotificationTap,
+      );
+    }
 
-    if (collapsible && opacity <= 0) {
+    final opacity = (1 - hideProgress).clamp(0.0, 1.0);
+
+    if (opacity <= 0) {
       return const SizedBox.shrink();
     }
 
     return ClipRect(
       child: Align(
         alignment: Alignment.topCenter,
-        heightFactor: collapsible ? opacity : 1,
+        heightFactor: opacity,
         child: Opacity(
           opacity: opacity,
           child: OffersAppBar(

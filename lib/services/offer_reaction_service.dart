@@ -1,8 +1,9 @@
 // lib/services/offer_reaction_service.dart
 
-import '../data/mock_client_data.dart';
 import '../models/interested_agent_model.dart';
 import '../models/offer_interaction_model.dart';
+import 'client_interaction_state_service.dart';
+import 'client_match_persistence.dart';
 import 'interaction_service.dart';
 import 'notification_realtime_hub.dart';
 
@@ -32,6 +33,18 @@ class OfferReactionService {
       accept: true,
       offerId: interaction.offerId > 0 ? interaction.offerId : null,
     );
+
+    await ClientMatchPersistence.markAccepted(
+      offerId: interaction.offerId,
+      agentId: interaction.agentId,
+      reactionId: interaction.id,
+    );
+    await ClientInteractionStateService.recordAccepted(
+      offerId: interaction.offerId,
+      agentId: interaction.agentId,
+      reactionId: interaction.id,
+    );
+    await ClientInteractionStateService.invalidate();
   }
 
   static Future<void> clientRejectAgent({
@@ -42,6 +55,12 @@ class OfferReactionService {
       accept: false,
       offerId: interaction.offerId > 0 ? interaction.offerId : null,
     );
+
+    await ClientMatchPersistence.markRejected(
+      offerId: interaction.offerId,
+      agentId: interaction.agentId,
+    );
+    await ClientInteractionStateService.invalidate();
   }
 
   static Future<List<InterestedAgentModel>> loadPendingAgentsForOffer(
@@ -50,31 +69,31 @@ class OfferReactionService {
     final pending = await InteractionService.getPendingForOffer(offerId);
 
     return pending
-        .where((item) => item.agentId > 0)
-        .map(
-          (item) => InterestedAgentModel(
-            id: item.agentId,
-            name: item.agentName ?? item.agentEmail ?? 'Agent',
-            jobTitle: 'Interested agent',
-            city: '—',
-            rating: 4.5,
-            completedJobs: 0,
-            imageUrl: 'assets/images/agent1.jpg',
-            offerId: item.offerId,
-            offerTitle: item.offerTitle,
-          ),
-        )
+        .where((item) => item.agentId > 0 && item.id > 0)
+        .map(InterestedAgentModel.fromInteraction)
         .toList();
   }
 
-  static InterestedAgentModel? findInterestedAgent({
+  static Future<InterestedAgentModel?> findInterestedAgent({
     required int offerId,
     required int agentId,
-  }) {
+    int? reactionId,
+  }) async {
+    final interaction = await InteractionService.lookupClientReaction(
+      reactionId: reactionId,
+      offerId: offerId,
+      agentId: agentId,
+    );
+
+    if (interaction != null && interaction.agentId > 0) {
+      return InterestedAgentModel.fromInteraction(interaction);
+    }
+
     try {
-      return MockClientData.interestedAgents.firstWhere(
-        (agent) => agent.offerId == offerId && agent.id == agentId,
+      final agents = await InteractionService.fetchInterestedAgents(
+        offerId: offerId,
       );
+      return agents.firstWhere((agent) => agent.id == agentId);
     } catch (_) {
       return null;
     }

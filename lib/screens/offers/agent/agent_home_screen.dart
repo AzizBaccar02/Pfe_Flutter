@@ -1,345 +1,363 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../conf/theme_provider.dart';
+import '../../../models/recommended_offer_model.dart';
+import '../../../services/agent_offers_realtime.dart';
+import '../../../services/ai_recommendation_service.dart';
+import '../../../services/profile_service.dart';
+import '../../../services/tab_auto_refresh.dart';
+import '../../../utils/skills_match_utils.dart';
+import '../../../utils/tunisia_location_utils.dart';
+import 'widgets/ai_matches_theme.dart';
+import 'widgets/offer_filter_sheet.dart';
+import 'widgets/offer_search_bar.dart';
+import 'widgets/offer_search_filters.dart';
+import '../widgets/agent_bottom_bar.dart';
+import 'widgets/recommended_offer_tile.dart';
 
-class AgentHomeScreen extends StatelessWidget {
+class AgentHomeScreen extends StatefulWidget {
   final VoidCallback onBrowseOffersTap;
   final VoidCallback onReactionsTap;
   final VoidCallback onChatsTap;
+  final void Function({
+    String? query,
+    OfferSearchFilters? filters,
+  }) onAiMatchTap;
   final ScrollController? scrollController;
+  final bool isTabActive;
 
   const AgentHomeScreen({
     super.key,
     required this.onBrowseOffersTap,
     required this.onReactionsTap,
     required this.onChatsTap,
+    required this.onAiMatchTap,
     this.scrollController,
+    this.isTabActive = true,
   });
+
+  @override
+  State<AgentHomeScreen> createState() => _AgentHomeScreenState();
+}
+
+class _AgentHomeScreenState extends State<AgentHomeScreen> {
+  bool _loadingRecommendations = true;
+  String? _recommendationsError;
+  bool _profileIncomplete = false;
+  AiRecommendationsResult? _recommendations;
+  String _agentCityKey = '';
+  List<String> _agentSkillTokens = const [];
+  final TextEditingController _searchController = TextEditingController();
+  OfferSearchFilters _searchFilters = const OfferSearchFilters();
+
+  late final TabAutoRefresh _autoRefresh;
+
+  @override
+  void initState() {
+    super.initState();
+    AgentOffersRealtime.instance.ensureStarted();
+    _autoRefresh = TabAutoRefresh(
+      onRefresh: ({showLoader = true}) =>
+          _loadRecommendations(showLoader: showLoader),
+      isTabActive: () => widget.isTabActive,
+      pollInterval: const Duration(seconds: 20),
+    );
+    _autoRefresh.attach();
+    if (widget.isTabActive) {
+      _loadRecommendations();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoRefresh.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant AgentHomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isTabActive && !oldWidget.isTabActive) {
+      _autoRefresh.onTabBecameActive();
+    }
+  }
+
+  List<RecommendedOfferModel> get _filteredOffers {
+    final offers = _recommendations?.offers ?? [];
+    return applyOfferSearchAndFilters(
+      offers: offers,
+      filters: _searchFilters.copyWith(query: _searchController.text),
+      agentCityKey: _agentCityKey,
+      agentSkillTokens: _agentSkillTokens,
+    );
+  }
+
+  Future<void> _openFilters() async {
+    final categories = collectOfferCategories(_recommendations?.offers ?? []);
+    final updated = await showOfferFilterSheet(
+      context: context,
+      isDarkMode: context.read<ThemeProvider>().isDarkMode,
+      current: _searchFilters.copyWith(query: _searchController.text),
+      categories: categories,
+    );
+    if (updated != null && mounted) {
+      setState(() => _searchFilters = updated);
+    }
+  }
+
+  void _openAiMatches({String? query}) {
+    widget.onAiMatchTap(
+      query: query ?? _searchController.text.trim(),
+      filters: _searchFilters.copyWith(
+        query: query ?? _searchController.text,
+      ),
+    );
+  }
+
+  void _handleOfferLiked(RecommendedOfferModel offer) {
+    if (!mounted || _recommendations == null) return;
+
+    setState(() {
+      _recommendations = AiRecommendationsResult(
+        agentCity: _recommendations!.agentCity,
+        sortBy: _recommendations!.sortBy,
+        offers: _recommendations!.offers
+            .where((item) => item.id != offer.id)
+            .toList(),
+      );
+    });
+  }
+
+  Future<void> _loadRecommendations({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() {
+        _loadingRecommendations = true;
+        _recommendationsError = null;
+        _profileIncomplete = false;
+      });
+    }
+
+    try {
+      final result = await AiRecommendationService.fetchRecommendedOffers(
+        limit: 40,
+      );
+
+      if (!mounted) return;
+
+      final profile = await ProfileService.getAgentProfile();
+
+      final agentKey = TunisiaLocationUtils.normalizeAgentLocation(
+        city: profile.city.isNotEmpty ? profile.city : result.agentCity,
+        address: profile.address,
+      );
+      final skillTokens = SkillsMatchUtils.parseSkillTokens(
+        profile.skills,
+        profile.bio,
+      );
+      setState(() {
+        _agentCityKey = agentKey;
+        _agentSkillTokens = skillTokens;
+        _recommendations = AiRecommendationsResult(
+          agentCity: result.agentCity,
+          sortBy: result.sortBy,
+          offers: sortRecommendedOffersByLocationAndNlp(
+            offers: result.offers,
+            agentCityKey: agentKey,
+            agentCityDisplay: result.agentCity,
+            agentSkillTokens: skillTokens,
+          ),
+        );
+        _loadingRecommendations = false;
+      });
+    } on AiRecommendationException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _recommendationsError = e.message;
+        _profileIncomplete = e.isProfileIncomplete;
+        _loadingRecommendations = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    final backgroundColor =
-        isDarkMode ? Colors.black : const Color(0xFFF6F8FC);
-    final cardColor = isDarkMode ? const Color(0xFF141414) : Colors.white;
-    final borderColor = isDarkMode
-        ? Colors.white.withOpacity(0.06)
-        : Colors.black.withOpacity(0.06);
-    final primaryTextColor =
-        isDarkMode ? Colors.white : const Color(0xFF111827);
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.66)
-        : const Color(0xFF6B7280);
+    final backgroundColor = AiMatchesTheme.screenBackground(isDarkMode);
+    final cardColor = AiMatchesTheme.cardBackground(isDarkMode);
+    final borderColor = AiMatchesTheme.cardBorder(isDarkMode);
+    final primaryTextColor = AiMatchesTheme.primaryText(isDarkMode);
+    final secondaryTextColor = AiMatchesTheme.secondaryText(isDarkMode);
 
-    const accentBlue = Color(0xFF3B82F6);
-    const accentGreen = Color(0xFF22C55E);
-    const accentPurple = Color(0xFF8B5CF6);
-    const accentRed = Color(0xFFEF4444);
-    const accentBrand = AppColors.accent;
+    final listPadding = EdgeInsets.fromLTRB(
+      20,
+      12,
+      20,
+      AgentBottomBar.scrollContentPaddingBottom(context),
+    );
 
     return Container(
       color: backgroundColor,
       child: RefreshIndicator(
         color: AppColors.accent,
         onRefresh: () async {
-          await Future<void>.delayed(const Duration(milliseconds: 400));
+          await _loadRecommendations();
         },
         child: ListView(
-          controller: scrollController,
+          controller: widget.scrollController,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
+          padding: listPadding,
           children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Welcome back,',
-                style: TextStyle(
-                  color: secondaryTextColor,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Agent Workspace',
-                style: TextStyle(
-                  color: primaryTextColor,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.6,
-                  height: 1.05,
-                ),
-              ),
-            ],
+          Text(
+            'Overview',
+            style: TextStyle(
+              color: secondaryTextColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 6),
+          Text(
+            'Opportunity dashboard',
+            style: TextStyle(
+              color: primaryTextColor,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.6,
+              height: 1.12,
+            ),
+          ),
+          const SizedBox(height: 20),
 
           _HeroCard(
-            onBrowseOffersTap: onBrowseOffersTap,
+            matchCount: _filteredOffers.length,
+            totalCount: _recommendations?.offers.length ?? 0,
+            isLoading: _loadingRecommendations,
+            isDarkMode: isDarkMode,
+            agentCity: _recommendations?.agentCity ?? '',
+            hasSearchActive: _searchFilters.hasActiveFilters ||
+                _searchController.text.trim().isNotEmpty,
+            onBrowseOffersTap: _openAiMatches,
           ),
 
           const SizedBox(height: 20),
 
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 56,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: cardColor,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: borderColor),
-                  ),
-                  child: Row(
-                    children: [
-                      HugeIcon(
-                        icon: HugeIcons.strokeRoundedSearch01,
-                        color: secondaryTextColor,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Search offers, skills, categories...',
-                          style: TextStyle(
-                            color: secondaryTextColor,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: borderColor),
-                ),
-                child: Center(
-                  child: HugeIcon(
-                    icon: HugeIcons.strokeRoundedFilterHorizontal,
-                    color: primaryTextColor.withOpacity(0.82),
-                    size: 20,
-                  ),
-                ),
-              ),
-            ],
+          OfferSearchBar(
+            controller: _searchController,
+            isDarkMode: isDarkMode,
+            activeFilterCount: _searchFilters.activeFilterCount,
+            onFilterTap: _openFilters,
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _openAiMatches(),
+            onClear: () {
+              _searchController.clear();
+              setState(() {});
+            },
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
           _SectionHeader(
-            title: 'Quick Access',
-            actionText: 'See all',
+            title: 'Quick access',
+            actionText: '',
             primaryTextColor: primaryTextColor,
             secondaryTextColor: secondaryTextColor,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            physics: const NeverScrollableScrollPhysics(),
-            childAspectRatio: 0.92,
-            children: [
-              _QuickAccessCard(
-                label: 'Offers',
-                icon: HugeIcons.strokeRoundedBriefcase01,
-                backgroundColor: isDarkMode
-                    ? accentGreen.withOpacity(0.18)
-                    : const Color(0xFFE9F9EF),
-                iconColor: isDarkMode
-                    ? accentGreen
-                    : const Color(0xFF16A34A),
-                textColor: primaryTextColor,
-                borderColor: borderColor,
-                onTap: onBrowseOffersTap,
-              ),
-              _QuickAccessCard(
-                label: 'Reactions',
-                icon: HugeIcons.strokeRoundedFavourite,
-                backgroundColor: isDarkMode
-                    ? accentRed.withOpacity(0.16)
-                    : const Color(0xFFFDECEC),
-                iconColor: isDarkMode
-                    ? accentRed
-                    : const Color(0xFFDC2626),
-                textColor: primaryTextColor,
-                borderColor: borderColor,
-                onTap: onReactionsTap,
-              ),
-              _QuickAccessCard(
-                label: 'Chats',
-                icon: HugeIcons.strokeRoundedMessage02,
-                backgroundColor: isDarkMode
-                    ? accentBlue.withOpacity(0.18)
-                    : const Color(0xFFEAF2FF),
-                iconColor: isDarkMode
-                    ? accentBlue
-                    : const Color(0xFF2563EB),
-                textColor: primaryTextColor,
-                borderColor: borderColor,
-                onTap: onChatsTap,
-              ),
-              _QuickAccessCard(
-                label: 'AI Match',
-                icon: HugeIcons.strokeRoundedSparkles,
-                backgroundColor: isDarkMode
-                    ? accentPurple.withOpacity(0.18)
-                    : const Color(0xFFF2ECFF),
-                iconColor: isDarkMode
-                    ? accentPurple
-                    : const Color(0xFF7C3AED),
-                textColor: primaryTextColor,
-                borderColor: borderColor,
-                onTap: onBrowseOffersTap,
-              ),
-              _QuickAccessCard(
-                label: 'Nearby',
-                icon: HugeIcons.strokeRoundedLocation01,
-                backgroundColor: isDarkMode
-                    ? accentBrand.withOpacity(0.16)
-                    : AppColors.accentSurface,
-                iconColor: isDarkMode
-                    ? accentBrand
-                    : AppColors.accentDark,
-                textColor: primaryTextColor,
-                borderColor: borderColor,
-                onTap: onBrowseOffersTap,
-              ),
-              _QuickAccessCard(
-                label: 'Subscription',
-                icon: HugeIcons.strokeRoundedWallet02,
-                backgroundColor: isDarkMode
-                    ? Colors.cyan.withOpacity(0.16)
-                    : const Color(0xFFE8FAFC),
-                iconColor: isDarkMode
-                    ? Colors.cyanAccent
-                    : const Color(0xFF0891B2),
-                textColor: primaryTextColor,
-                borderColor: borderColor,
-                onTap: onBrowseOffersTap,
-              ),
-            ],
+          _QuickAccessGrid(
+            isDarkMode: isDarkMode,
+            cardColor: cardColor,
+            borderColor: borderColor,
+            primaryTextColor: primaryTextColor,
+            secondaryTextColor: secondaryTextColor,
+            onBrowseOffersTap: widget.onBrowseOffersTap,
+            onAiMatchTap: _openAiMatches,
+            onReactionsTap: widget.onReactionsTap,
+            onChatsTap: widget.onChatsTap,
           ),
 
           const SizedBox(height: 26),
 
           _SectionHeader(
-            title: 'Recommended Offers',
+            title: 'Recommended for you',
             actionText: 'See all',
             primaryTextColor: primaryTextColor,
             secondaryTextColor: secondaryTextColor,
+            onActionTap: _openAiMatches,
           ),
+          if ((_recommendations?.agentCity ?? '').isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              _searchFilters.hasActiveFilters || _searchController.text.isNotEmpty
+                  ? '${_filteredOffers.length} results · nearby offers matched to your skills'
+                  : 'Prioritizing nearby offers around ${_recommendations!.agentCity}',
+              style: TextStyle(
+                color: secondaryTextColor,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
           const SizedBox(height: 14),
 
-          _RecommendedOfferCard(
+          ..._buildRecommendedSection(
             isDarkMode: isDarkMode,
-            title: 'Flutter service marketplace polish',
-            subtitle: 'Tunis · Mobile Development',
-            badge: '92% match',
-            badgeColor: accentGreen,
-            budget: '1200 DT',
             primaryTextColor: primaryTextColor,
             secondaryTextColor: secondaryTextColor,
             cardColor: cardColor,
             borderColor: borderColor,
-            onTap: onBrowseOffersTap,
-          ),
-          const SizedBox(height: 12),
-          _RecommendedOfferCard(
-            isDarkMode: isDarkMode,
-            title: 'Restaurant booking app UI redesign',
-            subtitle: 'Sousse · UI / UX',
-            badge: 'Strong match',
-            badgeColor: accentBlue,
-            budget: '850 DT',
-            primaryTextColor: primaryTextColor,
-            secondaryTextColor: secondaryTextColor,
-            cardColor: cardColor,
-            borderColor: borderColor,
-            onTap: onBrowseOffersTap,
           ),
 
           const SizedBox(height: 26),
 
           _SectionHeader(
-            title: 'Workspace Overview',
-            actionText: 'Today',
+            title: 'At a glance',
+            actionText: '',
             primaryTextColor: primaryTextColor,
             secondaryTextColor: secondaryTextColor,
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
           Row(
             children: [
               Expanded(
                 child: _OverviewStatCard(
-                  title: 'Open offers',
-                  value: '24',
-                  color: accentBlue,
+                  title: 'AI matches',
+                  value: _loadingRecommendations
+                      ? '—'
+                      : '${_recommendations?.offers.length ?? 0}',
+                  accentColor: AppColors.forTheme(isDarkMode),
                   cardColor: cardColor,
                   borderColor: borderColor,
                   primaryTextColor: primaryTextColor,
                   secondaryTextColor: secondaryTextColor,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: _OverviewStatCard(
-                  title: 'Pending',
-                  value: '06',
-                  color: isDarkMode
-                      ? accentBrand
-                      : AppColors.accentDark,
+                  title: 'Your area',
+                  value: (_recommendations?.agentCity ?? '').isNotEmpty
+                      ? _recommendations!.agentCity
+                      : '—',
+                  accentColor:
+                      isDarkMode ? const Color(0xFF5EEAD4) : const Color(0xFF0F766E),
                   cardColor: cardColor,
                   borderColor: borderColor,
                   primaryTextColor: primaryTextColor,
                   secondaryTextColor: secondaryTextColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _OverviewStatCard(
-                  title: 'Chats',
-                  value: '09',
-                  color: accentGreen,
-                  cardColor: cardColor,
-                  borderColor: borderColor,
-                  primaryTextColor: primaryTextColor,
-                  secondaryTextColor: secondaryTextColor,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _OverviewStatCard(
-                  title: 'Rejected',
-                  value: '02',
-                  color: accentRed,
-                  cardColor: cardColor,
-                  borderColor: borderColor,
-                  primaryTextColor: primaryTextColor,
-                  secondaryTextColor: secondaryTextColor,
+                  compactValue: true,
                 ),
               ),
             ],
@@ -349,162 +367,300 @@ class AgentHomeScreen extends StatelessWidget {
       ),
     );
   }
+
+  List<Widget> _buildRecommendedSection({
+    required bool isDarkMode,
+    required Color primaryTextColor,
+    required Color secondaryTextColor,
+    required Color cardColor,
+    required Color borderColor,
+  }) {
+    if (_loadingRecommendations) {
+      return [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 28),
+          child: Center(
+            child: CircularProgressIndicator(color: AppColors.accent),
+          ),
+        ),
+      ];
+    }
+
+    if (_recommendationsError != null) {
+      return [
+        _RecommendationsMessageCard(
+          isDarkMode: isDarkMode,
+          message: _recommendationsError!,
+          isProfileIncomplete: _profileIncomplete,
+          cardColor: cardColor,
+          borderColor: borderColor,
+          primaryTextColor: primaryTextColor,
+          secondaryTextColor: secondaryTextColor,
+          onTap: _profileIncomplete ? null : _openAiMatches,
+        ),
+      ];
+    }
+
+    final allOffers = _recommendations?.offers ?? [];
+    if (allOffers.isEmpty) {
+      return [
+        _RecommendationsMessageCard(
+          isDarkMode: isDarkMode,
+          message:
+              'No AI matches right now. Complete your skills & city, or browse all open offers.',
+          cardColor: cardColor,
+          borderColor: borderColor,
+          primaryTextColor: primaryTextColor,
+          secondaryTextColor: secondaryTextColor,
+          onTap: widget.onBrowseOffersTap,
+        ),
+      ];
+    }
+
+    final offers = _filteredOffers;
+    if (offers.isEmpty) {
+      return [
+        _RecommendationsMessageCard(
+          isDarkMode: isDarkMode,
+          message:
+              'No offers match your search or filters. Try different keywords or reset filters.',
+          cardColor: cardColor,
+          borderColor: borderColor,
+          primaryTextColor: primaryTextColor,
+          secondaryTextColor: secondaryTextColor,
+          onTap: () {
+            setState(() {
+              _searchController.clear();
+              _searchFilters = const OfferSearchFilters();
+            });
+          },
+        ),
+      ];
+    }
+
+    final preview = offers.take(3).toList();
+    final widgets = <Widget>[];
+
+    for (var i = 0; i < preview.length; i++) {
+      final offer = preview[i];
+      widgets.add(
+        RecommendedOfferTile(
+          offer: offer,
+          isDarkMode: isDarkMode,
+          primaryTextColor: primaryTextColor,
+          secondaryTextColor: secondaryTextColor,
+          cardColor: cardColor,
+          borderColor: borderColor,
+          compact: true,
+          onTap: () => showRecommendedOfferDetailsSheet(
+            context,
+            offer: offer,
+            isDarkMode: isDarkMode,
+            onLiked: _handleOfferLiked,
+          ),
+        ),
+      );
+      if (i < preview.length - 1) {
+        widgets.add(const SizedBox(height: 12));
+      }
+    }
+
+    return widgets;
+  }
+}
+
+class _RecommendationsMessageCard extends StatelessWidget {
+  final bool isDarkMode;
+  final String message;
+  final bool isProfileIncomplete;
+  final Color cardColor;
+  final Color borderColor;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+  final VoidCallback? onTap;
+
+  const _RecommendationsMessageCard({
+    required this.isDarkMode,
+    required this.message,
+    required this.cardColor,
+    required this.borderColor,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+    this.isProfileIncomplete = false,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isProfileIncomplete
+                    ? Icons.person_outline_rounded
+                    : Icons.info_outline_rounded,
+                color: AppColors.forTheme(isDarkMode),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    color: secondaryTextColor,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _HeroCard extends StatelessWidget {
+  final int matchCount;
+  final int totalCount;
+  final bool isLoading;
+  final bool isDarkMode;
+  final String agentCity;
+  final bool hasSearchActive;
   final VoidCallback onBrowseOffersTap;
 
   const _HeroCard({
+    required this.matchCount,
+    required this.totalCount,
+    required this.isLoading,
+    required this.isDarkMode,
+    required this.agentCity,
+    required this.hasSearchActive,
     required this.onBrowseOffersTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final primary = AiMatchesTheme.primaryText(isDarkMode);
+    final secondary = AiMatchesTheme.secondaryText(isDarkMode);
+    final accent = AppColors.forTheme(isDarkMode);
+
     return Container(
-      constraints: const BoxConstraints(minHeight: 225),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF2563EB),
-            Color(0xFF4F46E5),
-            Color(0xFF7C3AED),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF3B82F6).withOpacity(0.22),
-            blurRadius: 28,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: -18,
-            right: -12,
-            child: Container(
-              width: 128,
-              height: 128,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.10),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Positioned(
-            top: 58,
-            right: 32,
-            child: Container(
-              width: 104,
-              height: 104,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(28),
-              ),
-              child: Center(
-                child: HugeIcon(
-                  icon: HugeIcons.strokeRoundedBriefcase01,
-                  color: Colors.white,
-                  size: 42,
+        color: AiMatchesTheme.cardBackground(isDarkMode),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AiMatchesTheme.cardBorder(isDarkMode)),
+        boxShadow: isDarkMode
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -28,
-            right: 24,
-            child: Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 181),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
+              ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDarkMode
+                        ? AppColors.accent.withOpacity(0.12)
+                        : AppColors.accentSurface,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    isLoading
+                        ? 'Loading matches…'
+                        : hasSearchActive
+                            ? '$matchCount of $totalCount shown'
+                            : matchCount > 0
+                                ? '$matchCount matches${agentCity.isNotEmpty ? ' near $agentCity' : ''}'
+                                : 'Personalized for your profile',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Find work that fits you',
+                  style: TextStyle(
+                    color: primary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.4,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'We prioritize nearby offers first, then match to your skills. Use search & filters below.',
+                  style: TextStyle(
+                    color: secondary,
+                    fontSize: 13.5,
+                    height: 1.45,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: onBrowseOffersTap,
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                  label: const Text('View AI matches'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
+                      horizontal: 18,
+                      vertical: 12,
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.16),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Text(
-                      '12 new matches 🔥',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  const SizedBox(
-                    width: 210,
-                    child: Text(
-                      'Today’s best\nopportunities',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 27,
-                        fontWeight: FontWeight.w900,
-                        height: 1.02,
-                        letterSpacing: -0.8,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: 210,
-                    child: Text(
-                      'Open offers matched to your profile and skills.',
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.84),
-                        fontSize: 14,
-                        height: 1.4,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  SizedBox(
-                    height: 46,
-                    width: 150,
-                    child: ElevatedButton(
-                      onPressed: onBrowseOffersTap,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF1D4ED8),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: const Text(
-                        'Browse offers',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: isDarkMode
+                  ? AppColors.accent.withOpacity(0.1)
+                  : AppColors.accentSurface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              Icons.insights_outlined,
+              color: accent,
+              size: 34,
             ),
           ),
         ],
@@ -518,12 +674,14 @@ class _SectionHeader extends StatelessWidget {
   final String actionText;
   final Color primaryTextColor;
   final Color secondaryTextColor;
+  final VoidCallback? onActionTap;
 
   const _SectionHeader({
     required this.title,
     required this.actionText,
     required this.primaryTextColor,
     required this.secondaryTextColor,
+    this.onActionTap,
   });
 
   @override
@@ -534,18 +692,134 @@ class _SectionHeader extends StatelessWidget {
           title,
           style: TextStyle(
             color: primaryTextColor,
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
           ),
         ),
-        const Spacer(),
-        Text(
-          actionText,
-          style: TextStyle(
-            color: secondaryTextColor,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w700,
+        if (actionText.isNotEmpty) ...[
+          const Spacer(),
+          GestureDetector(
+            onTap: onActionTap,
+            child: Text(
+              actionText,
+              style: TextStyle(
+                color: onActionTap != null
+                    ? AppColors.forTheme(
+                        Theme.of(context).brightness == Brightness.dark,
+                      )
+                    : secondaryTextColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
+        ],
+      ],
+    );
+  }
+}
+
+class _QuickAccessGrid extends StatelessWidget {
+  final bool isDarkMode;
+  final Color cardColor;
+  final Color borderColor;
+  final Color primaryTextColor;
+  final Color secondaryTextColor;
+  final VoidCallback onBrowseOffersTap;
+  final VoidCallback onAiMatchTap;
+  final VoidCallback onReactionsTap;
+  final VoidCallback onChatsTap;
+
+  const _QuickAccessGrid({
+    required this.isDarkMode,
+    required this.cardColor,
+    required this.borderColor,
+    required this.primaryTextColor,
+    required this.secondaryTextColor,
+    required this.onBrowseOffersTap,
+    required this.onAiMatchTap,
+    required this.onReactionsTap,
+    required this.onChatsTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _QuickAccessCard(
+                label: 'Browse offers',
+                subtitle: 'Swipe & react',
+                icon: HugeIcons.strokeRoundedBriefcase01,
+                accentColor: AppColors.forTheme(isDarkMode),
+                isDarkMode: isDarkMode,
+                cardColor: cardColor,
+                borderColor: borderColor,
+                textColor: primaryTextColor,
+                subtitleColor: secondaryTextColor,
+                onTap: onBrowseOffersTap,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _QuickAccessCard(
+                label: 'AI matches',
+                subtitle: 'Smart ranking',
+                icon: HugeIcons.strokeRoundedSparkles,
+                accentColor: AppColors.forTheme(isDarkMode),
+                isDarkMode: isDarkMode,
+                cardColor: cardColor,
+                borderColor: borderColor,
+                textColor: primaryTextColor,
+                subtitleColor: secondaryTextColor,
+                onTap: onAiMatchTap,
+                highlighted: true,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _QuickAccessCard(
+                label: 'Reactions',
+                subtitle: 'Your activity',
+                icon: HugeIcons.strokeRoundedFavourite,
+                accentColor: isDarkMode
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFFB91C1C),
+                isDarkMode: isDarkMode,
+                cardColor: cardColor,
+                borderColor: borderColor,
+                textColor: primaryTextColor,
+                subtitleColor: secondaryTextColor,
+                onTap: onReactionsTap,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _QuickAccessCard(
+                label: 'Messages',
+                subtitle: 'Client chats',
+                icon: HugeIcons.strokeRoundedMessage02,
+                accentColor: isDarkMode
+                    ? const Color(0xFF5EEAD4)
+                    : const Color(0xFF0F766E),
+                isDarkMode: isDarkMode,
+                cardColor: cardColor,
+                borderColor: borderColor,
+                textColor: primaryTextColor,
+                subtitleColor: secondaryTextColor,
+                onTap: onChatsTap,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -554,61 +828,89 @@ class _SectionHeader extends StatelessWidget {
 
 class _QuickAccessCard extends StatelessWidget {
   final String label;
+  final String subtitle;
   final dynamic icon;
-  final Color backgroundColor;
-  final Color iconColor;
-  final Color textColor;
+  final Color accentColor;
+  final bool isDarkMode;
+  final Color cardColor;
   final Color borderColor;
+  final Color textColor;
+  final Color subtitleColor;
   final VoidCallback onTap;
+  final bool highlighted;
 
   const _QuickAccessCard({
     required this.label,
+    required this.subtitle,
     required this.icon,
-    required this.backgroundColor,
-    required this.iconColor,
-    required this.textColor,
+    required this.accentColor,
+    required this.isDarkMode,
+    required this.cardColor,
     required this.borderColor,
+    required this.textColor,
+    required this.subtitleColor,
     required this.onTap,
+    this.highlighted = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: borderColor),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: highlighted
+                  ? AppColors.accent.withOpacity(isDarkMode ? 0.45 : 0.35)
+                  : borderColor,
+              width: highlighted ? 1.5 : 1,
+            ),
+          ),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 52,
-                height: 52,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(16),
+                  color: accentColor.withOpacity(isDarkMode ? 0.12 : 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Center(
                   child: HugeIcon(
                     icon: icon,
-                    color: iconColor,
-                    size: 24,
+                    color: accentColor,
+                    size: 18,
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 label,
-                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: textColor,
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: subtitleColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
                 ),
               ),
             ],
@@ -619,193 +921,57 @@ class _QuickAccessCard extends StatelessWidget {
   }
 }
 
-class _RecommendedOfferCard extends StatelessWidget {
-  final bool isDarkMode;
-  final String title;
-  final String subtitle;
-  final String badge;
-  final Color badgeColor;
-  final String budget;
-  final Color primaryTextColor;
-  final Color secondaryTextColor;
-  final Color cardColor;
-  final Color borderColor;
-  final VoidCallback onTap;
-
-  const _RecommendedOfferCard({
-    required this.isDarkMode,
-    required this.title,
-    required this.subtitle,
-    required this.badge,
-    required this.badgeColor,
-    required this.budget,
-    required this.primaryTextColor,
-    required this.secondaryTextColor,
-    required this.cardColor,
-    required this.borderColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: borderColor),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: badgeColor.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Center(
-              child: HugeIcon(
-                icon: HugeIcons.strokeRoundedBriefcase01,
-                color: badgeColor,
-                size: 24,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: primaryTextColor,
-                    fontSize: 16.5,
-                    fontWeight: FontWeight.w800,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: secondaryTextColor,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: badgeColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        badge,
-                        style: TextStyle(
-                          color: badgeColor,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      budget,
-                      style: TextStyle(
-                        color: primaryTextColor,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: onTap,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: isDarkMode
-                    ? Colors.white.withOpacity(0.06)
-                    : Colors.black.withOpacity(0.04),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: HugeIcon(
-                  icon: HugeIcons.strokeRoundedArrowRight01,
-                  color: primaryTextColor.withOpacity(0.8),
-                  size: 18,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _OverviewStatCard extends StatelessWidget {
   final String title;
   final String value;
-  final Color color;
+  final Color accentColor;
   final Color cardColor;
   final Color borderColor;
   final Color primaryTextColor;
   final Color secondaryTextColor;
+  final bool compactValue;
 
   const _OverviewStatCard({
     required this.title,
     required this.value,
-    required this.color,
+    required this.accentColor,
     required this.cardColor,
     required this.borderColor,
     required this.primaryTextColor,
     required this.secondaryTextColor,
+    this.compactValue = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: cardColor,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 12,
-            height: 12,
+            width: 28,
+            height: 3,
             decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
+              color: accentColor,
+              borderRadius: BorderRadius.circular(999),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             value,
+            maxLines: compactValue ? 1 : 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: primaryTextColor,
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
+              fontSize: compactValue ? 18 : 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
             ),
           ),
           const SizedBox(height: 4),
@@ -813,8 +979,8 @@ class _OverviewStatCard extends StatelessWidget {
             title,
             style: TextStyle(
               color: secondaryTextColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ],

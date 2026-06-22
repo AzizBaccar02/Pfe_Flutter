@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 
-import '../../../conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class SettingsSearchBar extends StatelessWidget {

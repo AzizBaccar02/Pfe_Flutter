@@ -1,8 +1,9 @@
 // lib/screens/chats/widgets/chat_unread_badge.dart
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 
-/// Solid green pill used on chat list rows and the bottom nav.
+/// Compact unread count pill on chat list rows (beside time label).
 class ChatUnreadBadge extends StatelessWidget {
   final int count;
 
@@ -16,21 +17,22 @@ class ChatUnreadBadge extends StatelessWidget {
     if (count <= 0) return const SizedBox.shrink();
 
     final label = count > 9 ? '9+' : '$count';
+    final isSingleDigit = label.length == 1;
 
     return Container(
-      constraints: const BoxConstraints(
-        minWidth: 20,
-        minHeight: 20,
+      height: 15,
+      constraints: BoxConstraints(
+        minWidth: isSingleDigit ? 15 : 19,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: isSingleDigit ? 0 : 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF22C55E),
-        borderRadius: BorderRadius.circular(10),
+        color: AppColors.accent,
+        borderRadius: BorderRadius.circular(8),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF22C55E).withOpacity(0.35),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: AppColors.accent.withValues(alpha: 0.2),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -39,10 +41,10 @@ class ChatUnreadBadge extends StatelessWidget {
         label,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          height: 1.1,
-          letterSpacing: -0.2,
+          fontSize: 8.5,
+          fontWeight: FontWeight.w700,
+          height: 1,
+          letterSpacing: -0.25,
         ),
       ),
     );

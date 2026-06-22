@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
-import '../../conf/app_colors.dart';
 import '../../conf/theme_provider.dart';
 import '../../data/mock_notification_data.dart';
 import 'widgets/notification_empty_state.dart';
@@ -28,7 +29,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
     final items = MockNotificationData.all;
 
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final backgroundColor = isDarkMode ? Colors.black : Colors.white;
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
@@ -52,14 +53,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: primaryTextColor,
-            size: 20,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         centerTitle: true,
         title: Text(
           'Notifications',

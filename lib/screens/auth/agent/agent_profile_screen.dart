@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
@@ -99,16 +100,7 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: isDarkMode
-                ? Colors.white.withOpacity(0.7)
-                : Colors.black.withOpacity(0.7),
-            size: 18,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Agent Profile',
           style: TextStyle(

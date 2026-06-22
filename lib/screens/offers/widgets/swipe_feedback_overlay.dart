@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class SwipeFeedbackOverlay extends StatelessWidget {
@@ -17,11 +18,11 @@ class SwipeFeedbackOverlay extends StatelessWidget {
     final alignment = isLike ? Alignment.centerLeft : Alignment.centerRight;
 
     final backgroundColor = isLike
-        ? const Color(0xFF22C55E).withOpacity(isDarkMode ? 0.22 : 0.18)
+        ? AppColors.accent.withOpacity(isDarkMode ? 0.22 : 0.18)
         : const Color(0xFFFF4D67).withOpacity(isDarkMode ? 0.22 : 0.18);
 
     final badgeColor =
-        isLike ? const Color(0xFF22C55E) : const Color(0xFFFF4D67);
+        isLike ? AppColors.accent : const Color(0xFFFF4D67);
 
     return Container(
       alignment: alignment,

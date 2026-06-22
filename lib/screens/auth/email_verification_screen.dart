@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 
 import '../../conf/theme_provider.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/primary_button.dart';
+import '../offers/agent/agent_main_screen.dart';
 import '../offers/client/client_main_screen.dart';
 import 'complete_profile_prompt_screen.dart';
 
@@ -76,7 +78,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         MaterialPageRoute(
           builder: (_) => role == 'CLIENT'
               ? const ClientEntryScreen()
-              : const AgentEntryPlaceholderScreen(),
+              : const AgentEntryScreen(),
         ),
         (route) => false,
       );
@@ -85,17 +87,13 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
       setState(() {
         errorMessage = e.message;
+        isLoading = false;
       });
     } catch (_) {
       if (!mounted) return;
 
       setState(() {
         errorMessage = 'Unable to verify email. Please try again.';
-      });
-    } finally {
-      if (!mounted) return;
-
-      setState(() {
         isLoading = false;
       });
     }
@@ -158,6 +156,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         backgroundColor: backgroundColor,
         foregroundColor: primaryTextColor,
         elevation: 0,
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Verify Email',
           style: TextStyle(
@@ -167,9 +166,16 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
           ),
         ),
       ),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            20 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

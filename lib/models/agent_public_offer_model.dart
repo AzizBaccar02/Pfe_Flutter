@@ -1,3 +1,5 @@
+import '../utils/media_url_resolver.dart';
+
 /// Maps [OfferPublicSerializer] from `GET /api/offers/agent/offers/`.
 class AgentPublicOfferModel {
   final int id;
@@ -25,16 +27,7 @@ class AgentPublicOfferModel {
   });
 
   static AgentPublicOfferModel fromJson(Map<String, dynamic> json) {
-    final images = json['images'];
-    final urls = <String>[];
-    if (images is List) {
-      for (final item in images) {
-        if (item is Map<String, dynamic>) {
-          final u = item['url']?.toString().trim() ?? '';
-          if (u.isNotEmpty) urls.add(u);
-        }
-      }
-    }
+    final urls = MediaUrlResolver.parseImageList(json['images']);
 
     final skillsRaw = json['skills'];
     final skills = <String>[];

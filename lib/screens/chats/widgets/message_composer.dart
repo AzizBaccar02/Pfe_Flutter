@@ -1,6 +1,7 @@
 // lib/screens/chats/widgets/message_composer.dart
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class MessageComposer extends StatelessWidget {
@@ -17,7 +18,7 @@ class MessageComposer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final composerColor = isDarkMode ? const Color(0xFF000000) : Colors.white;
 

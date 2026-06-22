@@ -1,3 +1,5 @@
+import '../utils/media_url_resolver.dart';
+
 enum OfferStatus {
   open,
   closed,
@@ -48,9 +50,17 @@ class ClientOfferModel {
         json['postalCode'] ?? json['postal_code_value'],
       ),
       status: offerStatusFromApi(json['status']),
-      images: _parseImages(json['images']),
+      images: _parseOfferImages(json),
       createdAt: _parseDateTime(json['createdAt']),
-      interestedAgentsCount: _parseInt(json['interestedAgentsCount']) ?? 0,
+      interestedAgentsCount: _parseInt(
+            json['interestedAgentsCount'] ??
+                json['interested_agents_count'] ??
+                json['pendingReactionsCount'] ??
+                json['pending_reactions_count'] ??
+                json['likesCount'] ??
+                json['likes_count'],
+          ) ??
+          0,
     );
   }
 
@@ -136,21 +146,19 @@ class ClientOfferModel {
     return parsed ?? DateTime.now();
   }
 
-  static List<String> _parseImages(dynamic value) {
-    if (value == null || value is! List) return [];
+  static List<String> _parseOfferImages(Map<String, dynamic> json) {
+    final urls = <String>[
+      ...MediaUrlResolver.parseImageList(json['images']),
+      ...MediaUrlResolver.parseImageList(json['image']),
+      ...MediaUrlResolver.parseImageList(json['photos']),
+    ];
 
-    return value
-        .map((item) {
-          if (item is String) return item;
+    final cover = MediaUrlResolver.resolve(
+      json['cover']?.toString() ?? json['cover_image']?.toString(),
+    );
+    if (cover != null) urls.insert(0, cover);
 
-          if (item is Map<String, dynamic>) {
-            return item['url']?.toString() ?? '';
-          }
-
-          return '';
-        })
-        .where((url) => url.trim().isNotEmpty)
-        .toList();
+    return urls.toSet().toList();
   }
 }
 

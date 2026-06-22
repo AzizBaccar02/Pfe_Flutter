@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../models/agent_my_reaction_model.dart';
 
@@ -24,7 +25,7 @@ class AgentMyReactionDetailScreen extends StatelessWidget {
   static Color _accent(AgentMyReactionModel r) {
     if (!r.react) return const Color(0xFFEF4444);
     if (r.isPending) return AppColors.accent;
-    if (r.isAccepted) return const Color(0xFF22C55E);
+    if (r.isAccepted) return AppColors.accent;
     return const Color(0xFFEF4444);
   }
 
@@ -71,6 +72,7 @@ class AgentMyReactionDetailScreen extends StatelessWidget {
         backgroundColor: backgroundColor,
         foregroundColor: primaryTextColor,
         elevation: 0,
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Reaction details',
           style: TextStyle(

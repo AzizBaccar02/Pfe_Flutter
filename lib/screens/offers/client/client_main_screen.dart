@@ -1,26 +1,36 @@
 // lib/screens/offers/client/client_main_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
+import '../../../conf/app_providers.dart';
 import '../../../conf/theme_provider.dart';
-import '../../../conf/user_profile_provider.dart';
+import '../../../data/mock_client_data.dart';
 import '../../../models/interested_agent_model.dart';
+import '../../../services/chat_local_read_cursor.dart';
 import '../../../services/chat_service.dart';
+import '../../../services/chat_realtime_hub.dart';
+import '../../../utils/chat_unread_merge.dart';
 import '../../../services/profile_service.dart';
 import '../../auth/client/client_profile_screen.dart';
 import '../../chats/chats_screen.dart';
-import '../../chats/widgets/chat_notification_listener.dart';
 import '../../notifications/notifications_screen.dart';
-import '../../notifications/widgets/app_notification_listener.dart';
+import '../../../services/app_navigation_bus.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/offer_service.dart';
+import '../../../services/app_realtime_coordinator.dart';
+import '../../../services/client_interaction_realtime.dart';
 import '../../../services/notification_realtime_hub.dart';
+import '../../../services/presence_service.dart';
 import 'client_home_screen.dart';
 import 'create_offer_screen.dart';
 import 'interested_agents_screen.dart';
 import 'my_offers_screen.dart';
-import '../widgets/offers_app_bar_layout.dart';
+import '../widgets/offers_app_bar.dart';
 import '../widgets/offers_bottom_bar.dart';
 import '../widgets/offers_drawer.dart';
 
@@ -40,31 +50,91 @@ class ClientMainScreen extends StatefulWidget {
   State<ClientMainScreen> createState() => _ClientMainScreenState();
 }
 
-class _ClientMainScreenState extends State<ClientMainScreen> {
+class _ClientMainScreenState extends State<ClientMainScreen>
+    with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _homeScrollController = ScrollController();
 
   int _selectedIndex = 0;
   int _unreadChatCount = 0;
   int _unreadNotificationCount = 0;
+  int _interestedPendingCount = 0;
+  StreamSubscription<int>? _notificationCountSubscription;
+  StreamSubscription<Map<String, dynamic>>? _chatInboxSubscription;
   int _offersRefreshSeed = 0;
-  final OffersAppBarScrollBehavior _appBarScroll = OffersAppBarScrollBehavior();
-
+  /// Bumped after a successful create so [IndexedStack] rebuilds a fresh form.
+  int _createOfferSeed = 0;
   bool _isSyncingUnread = false;
 
-  final Set<int> _processedAgentIds = {};
+  final Set<int> _processedReactionIds = {};
   final List<InterestedAgentModel> _matchedAgents = [];
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    AppProviders.profile.clearProfileImage();
+
+    _notificationCountSubscription =
+        NotificationRealtimeHub.instance.onUnreadCountChanged.listen((count) {
+      if (!mounted || _unreadNotificationCount == count) return;
+      setState(() => _unreadNotificationCount = count);
+    });
+
+    _registerNavigationBus();
+    _chatInboxSubscription =
+        ChatRealtimeHub.instance.onInboxEvent.listen((event) {
+      if (!ChatRealtimeHub.isMessageRelatedEvent(event)) return;
+      unawaited(_syncUnreadChatCount());
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncClientAccountUserId();
       _hydrateProfileImage();
       _syncUnreadChatCount();
-      _bootstrapNotifications();
+      _bootstrapRealtimeServices();
     });
+  }
+
+  void _registerNavigationBus() {
+    final bus = AppNavigationBus.instance;
+    bus.openNotifications = () => unawaited(_openNotifications());
+    bus.reviewAgentInterest = _openInterestedFromNotification;
+    bus.agentAccepted = _handleMatchedAgent;
+    bus.chatOpened = () async {
+      if (!mounted) return;
+
+      setState(() {
+        _selectedIndex = 4;
+      });
+
+      await _syncUnreadChatCount();
+    };
+    bus.isChatsTabActive = () => _selectedIndex == 4;
+  }
+
+  void _openInterestedFromNotification() {
+    ClientInteractionRealtime.instance.notifyRefresh();
+    _changeTab(3);
+  }
+
+  Future<void> _bootstrapRealtimeServices() async {
+    if (!mounted) return;
+
+    await PresenceService.activate();
+
+    AppRealtimeCoordinator.instance.ensureStarted();
+    ClientInteractionRealtime.instance.ensureStarted();
+    await NotificationRealtimeHub.instance.ensureStarted();
+    await _bootstrapChatRealtime();
+
+    if (!mounted) return;
+    await _bootstrapNotifications();
+  }
+
+  Future<void> _bootstrapChatRealtime() async {
+    await ChatRealtimeHub.instance.ensureStarted();
   }
 
   Future<void> _syncClientAccountUserId() async {
@@ -94,13 +164,22 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     _isSyncingUnread = true;
 
     try {
+      await ChatLocalReadCursor.instance.ensureLoaded();
+
       final response = await ChatService.getCurrentUserChats();
 
       final userId = await AuthService.getStoredUserId() ?? 0;
 
-      final unreadCount = response.chats.fold<int>(
+      final chats = ChatUnreadMerge.mergeLists(
+        serverChats: response.chats,
+        previousChats: const [],
+        viewerUserId: userId,
+      );
+
+      final cursor = ChatLocalReadCursor.instance;
+      final unreadCount = chats.fold<int>(
         0,
-        (total, chat) => total + chat.effectiveUnreadCountForViewer(userId),
+        (total, chat) => total + cursor.displayUnreadCount(chat, userId),
       );
 
       if (!mounted) return;
@@ -118,12 +197,13 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
   }
 
   Future<void> _hydrateProfileImage() async {
+    final provider = AppProviders.profile;
+
     try {
       final profile = await ProfileService.getClientProfile();
 
       if (!mounted) return;
 
-      final provider = context.read<UserProfileProvider>();
       final remoteUrl = ProfileService.resolveMediaUrl(profile.photoUrl);
 
       if (remoteUrl != null && remoteUrl.isNotEmpty) {
@@ -133,38 +213,16 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       }
     } catch (_) {
       if (!mounted) return;
-      context.read<UserProfileProvider>().clearProfileImage();
+      provider.clearProfileImage();
     }
   }
 
-  void _selectTab(int index) {
-    setState(() {
-      _selectedIndex = index;
-      _appBarScroll.reset();
-    });
-  }
-
-  void _goToMyOffers() {
-    _selectTab(1);
-  }
-
-  void _goToCreateOffer() {
-    _selectTab(2);
-  }
-
-  void _goToInterestedAgents() {
-    _selectTab(3);
-  }
-
-  void _goToChats() {
-    _selectTab(4);
-  }
-
   void _handleOfferCreated() {
+    OfferService.invalidateMyOffersCache();
     setState(() {
+      _createOfferSeed++;
       _offersRefreshSeed++;
       _selectedIndex = 1;
-      _appBarScroll.reset();
     });
   }
 
@@ -196,8 +254,11 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
 
     if (!mounted) return;
 
+    await hub.syncUnreadCount();
+    if (!mounted) return;
+
     setState(() {
-      _unreadNotificationCount = 0;
+      _unreadNotificationCount = hub.unreadCount;
     });
 
     if (result is InterestedAgentModel) {
@@ -212,15 +273,22 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       _selectedIndex = index;
     });
 
+    if (index == 3) {
+      ClientInteractionRealtime.instance.notifyRefresh();
+    }
+
     if (index == 4) {
       _syncUnreadChatCount();
     }
   }
 
   void _handleProcessedAgent(InterestedAgentModel agent) {
+    if (agent.reactionId <= 0) return;
+
     setState(() {
-      _processedAgentIds.add(agent.id);
+      _processedReactionIds.add(agent.reactionId);
     });
+    ClientInteractionRealtime.instance.notifyRefresh();
   }
 
   void _handleMatchedAgent(InterestedAgentModel agent) {
@@ -230,7 +298,6 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       setState(() {
         _matchedAgents.insert(0, agent);
         _selectedIndex = 4;
-        _appBarScroll.reset();
       });
 
       _syncUnreadChatCount();
@@ -246,7 +313,7 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
             children: [
               const HugeIcon(
                 icon: HugeIcons.strokeRoundedFavourite,
-                color: Color(0xFF22C55E),
+                color: AppColors.accent,
                 size: 18,
               ),
               const SizedBox(width: 10),
@@ -277,26 +344,36 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDarkMode = themeProvider.isDarkMode;
 
-    final backgroundColor = isDarkMode ? Colors.black : Colors.white;
+    final backgroundColor = isDarkMode ? Colors.black : const Color(0xFFF5F5F7);
 
     final screens = [
       ClientHomeScreen(
         scrollController: _homeScrollController,
+        isTabActive: _selectedIndex == 0,
         onCreateOfferTap: () => _changeTab(2),
         onMyOffersTap: () => _changeTab(1),
         onInterestedTap: () => _changeTab(3),
         onChatsTap: () => _changeTab(4),
       ),
-      MyOffersScreen(key: ValueKey(_offersRefreshSeed)),
+      MyOffersScreen(
+        refreshToken: _offersRefreshSeed,
+        isTabActive: _selectedIndex == 1,
+      ),
       CreateOfferScreen(
+        key: ValueKey(_createOfferSeed),
         onBack: () => _changeTab(0),
         onCreated: _handleOfferCreated,
       ),
       InterestedAgentsScreen(
         showBackButton: false,
-        hiddenAgentIds: _processedAgentIds,
+        isTabActive: _selectedIndex == 3,
+        hiddenReactionIds: _processedReactionIds,
         onProcessed: _handleProcessedAgent,
         onMatched: _handleMatchedAgent,
+        onPendingCountChanged: (count) {
+          if (!mounted || _interestedPendingCount == count) return;
+          setState(() => _interestedPendingCount = count);
+        },
       ),
       ChatsScreen(
         matchedAgents: _matchedAgents,
@@ -310,70 +387,24 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
       backgroundColor: backgroundColor,
       drawer: OffersDrawer(
         isDarkMode: isDarkMode,
-        onMyOffersTap: _goToMyOffers,
-        onCreateOfferTap: _goToCreateOffer,
-        onInterestedTap: _goToInterestedAgents,
-        onChatsTap: _goToChats,
       ),
-      appBar: CollapsibleOffersAppBar(
+      appBar: OffersAppBar(
         isDarkMode: isDarkMode,
         notificationUnreadCount: _unreadNotificationCount,
-        hideProgress: _appBarScroll.hideProgress,
-        collapsible: _selectedIndex == 0,
         onProfileTap: () {
           _scaffoldKey.currentState?.openDrawer();
         },
         onNotificationTap: _openNotifications,
       ),
-      body: AppNotificationListener(
-        onUnreadCountChanged: (count) {
-          if (!mounted || _unreadNotificationCount == count) return;
-
-          setState(() {
-            _unreadNotificationCount = count;
-          });
-        },
-        onOpenNotifications: _openNotifications,
-        onAgentAccepted: _handleMatchedAgent,
-        child: ChatNotificationListener(
-          isChatsTabActive: _selectedIndex == 4,
-          onUnreadCountChanged: (count) {
-            if (!mounted || _unreadNotificationCount == count) return;
-
-            setState(() {
-              _unreadNotificationCount = count;
-            });
-          },
-          onOpenNotifications: _openNotifications,
-          child: ChatNotificationListener(
-            isChatsTabActive: _selectedIndex == 4,
-            onUnreadCountChanged: (count) {
-              if (!mounted || _unreadChatCount == count) return;
-
-              setState(() {
-                _unreadChatCount = count;
-              });
-            },
-            onChatOpened: () async {
-              if (!mounted) return;
-
-              setState(() {
-                _selectedIndex = 4;
-              });
-
-              await _syncUnreadChatCount();
-            },
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: screens,
-            ),
-          ),
-        ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: screens,
       ),
       bottomNavigationBar: OffersBottomBar(
         selectedIndex: _selectedIndex,
         isDarkMode: isDarkMode,
         chatUnreadCount: _unreadChatCount,
+        interestedPendingCount: _interestedPendingCount,
         onHomeTap: () => _changeTab(0),
         onOffersTap: () => _changeTab(1),
         onAddTap: () => _changeTab(2),
@@ -385,8 +416,21 @@ class _ClientMainScreenState extends State<ClientMainScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppNavigationBus.instance.clear();
+    _notificationCountSubscription?.cancel();
+    _chatInboxSubscription?.cancel();
     _homeScrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(PresenceService.refreshOnline());
+      unawaited(NotificationRealtimeHub.instance.refreshNow());
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'resume');
+    }
   }
 }
 
@@ -400,10 +444,8 @@ class ClientProfileCompletionScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.black : Colors.white,
-      appBar: CollapsibleOffersAppBar(
+      appBar: OffersAppBar(
         isDarkMode: isDarkMode,
-        notificationUnreadCount: 0,
-        collapsible: false,
         onProfileTap: () {},
         onNotificationTap: () {},
       ),

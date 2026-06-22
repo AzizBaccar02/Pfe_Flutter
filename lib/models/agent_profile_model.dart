@@ -1,5 +1,9 @@
+import '../utils/media_url_resolver.dart';
+
 class AgentProfileModel {
   final int? userId;
+  /// Agent profile row id from `/api/users/agent/profile/me/`.
+  final int? profileId;
   final String firstName;
   final String lastName;
   final String email;
@@ -12,9 +16,12 @@ class AgentProfileModel {
   final String address;
   final String postalCode;
   final bool isProfileCompleted;
+  final double averageRating;
+  final int ratingCount;
 
   const AgentProfileModel({
     this.userId,
+    this.profileId,
     required this.firstName,
     required this.lastName,
     required this.email,
@@ -27,7 +34,11 @@ class AgentProfileModel {
     required this.address,
     required this.postalCode,
     required this.isProfileCompleted,
+    this.averageRating = 0,
+    this.ratingCount = 0,
   });
+
+  bool get hasRatings => ratingCount > 0 && averageRating > 0;
 
   String get displayName {
     final full = '$firstName $lastName'.trim();
@@ -48,11 +59,7 @@ class AgentProfileModel {
     final rawHourlyRate = json['hourlyRate'] ?? json['hourly_rate'] ?? 0;
 
     final photoRaw = _pickPhoto(json) ?? '';
-    final photoUrl = photoRaw.startsWith('http')
-        ? photoRaw
-        : photoRaw.isNotEmpty
-            ? 'http://127.0.0.1:8000$photoRaw'
-            : '';
+    final photoUrl = MediaUrlResolver.resolve(photoRaw) ?? '';
 
     return AgentProfileModel(
       firstName:          firstName,
@@ -67,6 +74,16 @@ class AgentProfileModel {
       address:            (json['address_value'] ?? json['address'] ?? '').toString(),
       postalCode:         (json['postal_code_value'] ?? json['postalCode'] ?? '').toString(),
       isProfileCompleted: json['isProfileCompleted'] == true,
+      averageRating: _parseDouble(
+        json['rating'] ?? json['averageRating'] ?? json['average_rating'],
+      ),
+      ratingCount: _parseInt(
+            json['ratingCount'] ??
+                json['rating_count'] ??
+                json['completedJobs'] ??
+                json['completed_jobs'],
+          ) ??
+          0,
     );
   }
 
@@ -74,30 +91,77 @@ class AgentProfileModel {
     required Map<String, dynamic> meJson,
     required Map<String, dynamic> agentJson,
   }) {
-    final rawHourlyRate = agentJson['hourlyRate'] ?? 0;
+    final profile = meJson['profile'] is Map
+        ? Map<String, dynamic>.from(meJson['profile'] as Map)
+        : <String, dynamic>{};
 
-    final photoRaw = (agentJson['photo'] ?? '').toString();
-    final photoUrl = photoRaw.startsWith('http')
-        ? photoRaw
-        : photoRaw.isNotEmpty
-            ? 'http://127.0.0.1:8000$photoRaw'
-            : '';
+    final rawHourlyRate =
+        agentJson['hourlyRate'] ?? agentJson['hourly_rate'] ?? 0;
+
+    final photoRaw =
+        _pickPhoto(agentJson) ?? _pickPhoto(profile) ?? '';
+    final photoUrl = MediaUrlResolver.resolve(photoRaw) ?? '';
+
+    final userIdRaw = meJson['id'] ?? meJson['userId'] ?? meJson['user_id'];
+    final userId = userIdRaw is int
+        ? userIdRaw
+        : int.tryParse(userIdRaw?.toString() ?? '');
+
+    final profileIdRaw = agentJson['id'] ?? agentJson['agentId'];
+    final profileId = profileIdRaw is int
+        ? profileIdRaw
+        : int.tryParse(profileIdRaw?.toString() ?? '');
 
     return AgentProfileModel(
-      firstName: (meJson['first_name'] ?? '').toString(),
-      lastName: (meJson['last_name'] ?? '').toString(),
+      userId: userId,
+      profileId: profileId,
+      firstName: (meJson['first_name'] ?? meJson['firstName'] ?? '')
+          .toString(),
+      lastName:
+          (meJson['last_name'] ?? meJson['lastName'] ?? '').toString(),
       email: (meJson['email'] ?? '').toString(),
       phone: (agentJson['phone'] ?? profile['phone'] ?? '').toString(),
-      photoUrl: (agentJson['photo'] ?? profile['photo'] ?? '').toString(),
+      photoUrl: photoUrl,
       bio: (agentJson['bio'] ?? profile['bio'] ?? '').toString(),
       skills: (agentJson['skills'] ?? profile['skills'] ?? '').toString(),
       hourlyRate: double.tryParse(rawHourlyRate.toString()) ?? 0,
-      city: (agentJson['city_value'] ?? '').toString(),
-      address: (agentJson['address_value'] ?? '').toString(),
-      postalCode: (agentJson['postal_code_value'] ?? '').toString(),
+      city: (agentJson['city_value'] ?? agentJson['city'] ?? '').toString(),
+      address:
+          (agentJson['address_value'] ?? agentJson['address'] ?? '')
+              .toString(),
+      postalCode: (agentJson['postal_code_value'] ??
+              agentJson['postalCode'] ??
+              '')
+          .toString(),
       isProfileCompleted: meJson['isProfileCompleted'] == true,
+      averageRating: _parseDouble(
+        agentJson['rating'] ??
+            agentJson['averageRating'] ??
+            agentJson['average_rating'],
+      ),
+      ratingCount: _parseInt(
+            agentJson['ratingCount'] ??
+                agentJson['rating_count'] ??
+                agentJson['completedJobs'] ??
+                agentJson['completed_jobs'],
+          ) ??
+          0,
     );
   }
+}
+
+double _parseDouble(dynamic value) {
+  if (value == null) return 0;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  return double.tryParse(value.toString()) ?? 0;
+}
+
+int? _parseInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is double) return value.round();
+  return int.tryParse(value.toString());
 }
 
 String? _pickPhoto(Map<String, dynamic> map) {

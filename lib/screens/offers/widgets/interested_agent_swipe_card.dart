@@ -1,9 +1,13 @@
-import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../../../models/interested_agent_model.dart';
+import '../../../widgets/agent_profile_avatar.dart';
+import '../../../widgets/offer_cover_image.dart';
+import 'elegant_swipe_action_button.dart';
 
 class InterestedAgentSwipeCard extends StatelessWidget {
   final InterestedAgentModel agent;
@@ -13,7 +17,6 @@ class InterestedAgentSwipeCard extends StatelessWidget {
   final VoidCallback onDetailsTap;
   final double dragDx;
 
-  /// Use false for the card behind the main card.
   final bool showActions;
   final bool showDetailsButton;
 
@@ -30,224 +33,180 @@ class InterestedAgentSwipeCard extends StatelessWidget {
   });
 
   Color _feedbackColor() {
-    if (dragDx > 0) return const Color(0xFF16A34A);
+    if (dragDx > 0) return AppColors.accent;
     if (dragDx < 0) return const Color(0xFFDC2626);
     return Colors.transparent;
   }
 
   double _feedbackOpacity() {
-    final value = (dragDx.abs() / 120).clamp(0.0, 1.0);
-    return value * 0.16;
+    return (dragDx.abs() / 120).clamp(0.0, 1.0) * 0.14;
   }
 
   String _feedbackText() {
-    if (dragDx > 25) return 'LIKE';
-    if (dragDx < -25) return 'NOPE';
+    if (dragDx > 25) return 'ACCEPT';
+    if (dragDx < -25) return 'DECLINE';
     return '';
   }
 
-  Widget _buildFallbackImage() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF1A1A1A),
-            Color(0xFF111111),
-          ],
+  Widget _buildOfferCover() {
+    final cover = agent.coverImageUrl;
+
+    if (cover.isEmpty) {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1C1C1E), Color(0xFF0D0D0F)],
+          ),
         ),
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset(
-            agent.imageUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) {
-              return Container(
-                color: isDarkMode
-                    ? const Color(0xFF1C1C1C)
-                    : const Color(0xFFEDEDED),
-                child: Center(
-                  child: HugeIcon(
-                    icon: HugeIcons.strokeRoundedUser,
-                    color: isDarkMode
-                        ? Colors.white.withOpacity(0.72)
-                        : Colors.black.withOpacity(0.72),
-                    size: 42,
-                  ),
-                ),
-              );
-            },
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withOpacity(0.04),
-                  Colors.black.withOpacity(0.10),
-                  Colors.black.withOpacity(0.42),
-                  Colors.black.withOpacity(0.88),
-                ],
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              HugeIcon(
+                icon: HugeIcons.strokeRoundedBriefcase01,
+                color: Colors.white.withValues(alpha: 0.35),
+                size: 48,
               ),
-            ),
-          ),
-          Positioned(
-            right: 16,
-            bottom: 18,
-            child: _CardCircleIconButton(
-              onTap: onInfoTap,
-              isDarkMode: true,
-              compact: true,
-              child: Transform.rotate(
-                angle: math.pi,
-                child: const HugeIcon(
-                  icon: HugeIcons.strokeRoundedArrowLeft01,
-                  color: Colors.white,
-                  size: 18,
+              const SizedBox(height: 12),
+              Text(
+                'Offer image',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
                 ),
               ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return OfferCoverImage(
+      imageUrl: cover,
+      fit: BoxFit.cover,
+      isDarkMode: isDarkMode,
+    );
+  }
+
+  Widget _glassPanel({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.42),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
             ),
           ),
-          Positioned(
-            left: 18,
-            right: 78,
-            bottom: 18,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  agent.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  agent.jobTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.90),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  agent.city,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.82),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          child: child,
+        ),
       ),
     );
   }
 
-  Widget _buildImage(String path) {
-    if (path.trim().isEmpty) {
-      return _buildFallbackImage();
-    }
+  Widget _agentChip() {
+    final name = agent.displayAgentLabel;
 
-    if (path.startsWith('http://') || path.startsWith('https://')) {
-      return Image.network(
-        path,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) {
-          return _buildFallbackImage();
-        },
-      );
-    }
-
-    if (path.startsWith('assets/')) {
-      return Image.asset(
-        path,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) {
-          return _buildFallbackImage();
-        },
-      );
-    }
-
-    return Image.file(
-      File(path),
-      width: double.infinity,
-      height: double.infinity,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) {
-        return _buildFallbackImage();
-      },
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.38),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.14),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AgentProfileAvatar(
+                photoUrl: agent.imageUrl,
+                displayName: agent.name,
+                radius: 18,
+                backgroundColor: const Color(0xFF2A2A2E),
+                hidePhoto: agent.isPendingInterest,
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  Text(
+                    'Interested agent',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Transform.scale(
-      scale: scale,
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: isDarkMode ? const Color(0xFF141414) : const Color(0xFFF2F2F2),
-          borderRadius: BorderRadius.circular(34),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.asset(
-              agent.imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) {
-                return Container(
-                  color: isDarkMode
-                      ? const Color(0xFF1C1C1C)
-                      : const Color(0xFFEDEDED),
-                );
-              },
-            ),
-            Container(
-              color: Colors.black.withOpacity(0.42),
-            ),
-            Positioned(
-              left: 18,
-              right: 18,
-              bottom: 18,
-              child: Opacity(
-                opacity: opacity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      agent.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w700,
+    final shadowColor = isDarkMode
+        ? Colors.black.withValues(alpha: 0.4)
+        : Colors.black.withValues(alpha: 0.12);
+
+    return SizedBox.expand(
+      child: Column(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      Positioned.fill(child: _buildOfferCover()),
+
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.35),
+                                Colors.transparent,
+                                Colors.transparent,
+                                Colors.black.withValues(alpha: 0.55),
+                              ],
+                              stops: const [0.0, 0.22, 0.55, 1.0],
+                            ),
+                          ),
+                        ),
                       ),
 
-                      /// Swipe feedback color overlay.
                       Positioned.fill(
                         child: IgnorePointer(
                           child: Container(
@@ -258,183 +217,142 @@ class InterestedAgentSwipeCard extends StatelessWidget {
                         ),
                       ),
 
-                      /// Light full image overlay.
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.06),
-                                  Colors.transparent,
-                                  Colors.transparent,
-                                  Colors.black.withValues(alpha: 0.08),
-                                ],
-                                stops: const [0.0, 0.18, 0.62, 1.0],
-                              ),
-                            ),
-                          ),
-                        ),
+                      Positioned(
+                        top: 14,
+                        left: 14,
+                        right: 14,
+                        child: _agentChip(),
                       ),
 
-                      /// Bottom shadow, around 30% of the card.
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        height: constraints.maxHeight * 0.30,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withValues(alpha: 0.00),
-                                  Colors.black.withValues(alpha: 0.25),
-                                  Colors.black.withValues(alpha: 0.55),
-                                  Colors.black.withValues(alpha: 0.82),
-                                ],
-                                stops: const [0.0, 0.28, 0.70, 1.0],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      /// Swipe label.
-                      Positioned(
-                        top: 42,
-                        left: dragDx >= 0 ? 14 : null,
-                        right: dragDx < 0 ? 14 : null,
-                        child: IgnorePointer(
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 120),
-                            opacity: _feedbackText().isEmpty ? 0 : 1,
+                      if (_feedbackText().isNotEmpty)
+                        Positioned(
+                          top: 72,
+                          left: dragDx >= 0 ? 18 : null,
+                          right: dragDx < 0 ? 18 : null,
+                          child: IgnorePointer(
                             child: Transform.rotate(
-                              angle: dragDx >= 0 ? -0.10 : 0.10,
+                              angle: dragDx >= 0 ? -0.08 : 0.08,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
+                                  horizontal: 14,
+                                  vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
                                     color: dragDx >= 0
-                                        ? const Color(0xFF22C55E)
+                                        ? AppColors.accent
                                         : const Color(0xFFEF4444),
-                                    width: 1.8,
+                                    width: 2,
                                   ),
-                                  borderRadius: BorderRadius.circular(12),
-                                  color: Colors.black.withValues(alpha: 0.12),
+                                  color: Colors.black.withValues(alpha: 0.2),
                                 ),
                                 child: Text(
                                   _feedbackText(),
                                   style: TextStyle(
                                     color: dragDx >= 0
-                                        ? const Color(0xFF22C55E)
+                                        ? AppColors.accent
                                         : const Color(0xFFEF4444),
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w800,
-                                    letterSpacing: 1,
-                                    shadows: const [
-                                      Shadow(
-                                        color: Colors.black87,
-                                        blurRadius: 8,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
+                                    letterSpacing: 1.2,
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
 
-                      /// Bottom text, same structure as agent offer card.
                       Positioned(
-                        left: 16,
-                        right: 16,
+                        left: 14,
+                        right: 14,
                         bottom: 14,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: IgnorePointer(
+                        child: _glassPanel(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
                                 child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accent
+                                            .withValues(alpha: 0.18),
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppColors.accent
+                                              .withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Liked your offer',
+                                        style: TextStyle(
+                                          color: AppColors.accent,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: 0.4,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
                                     Text(
-                                      agent.name,
+                                      agent.displaySubtitle,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 20,
+                                        fontSize: 18,
                                         fontWeight: FontWeight.w800,
-                                        height: 1.12,
-                                        shadows: [
-                                          Shadow(
-                                            color: Colors.black87,
-                                            blurRadius: 10,
-                                            offset: Offset(0, 3),
-                                          ),
-                                        ],
+                                        height: 1.2,
+                                        letterSpacing: -0.3,
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      agent.jobTitle,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color:
-                                            Colors.white.withValues(alpha: 0.92),
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Colors.black87,
-                                            blurRadius: 8,
-                                            offset: Offset(0, 2),
+                                    if (agent.displaySkillsLine != null) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        agent.displaySkillsLine!,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.78,
                                           ),
-                                        ],
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 6),
+                                    ],
+                                    const SizedBox(height: 8),
                                     Row(
                                       children: [
                                         HugeIcon(
                                           icon: HugeIcons
                                               .strokeRoundedLocation01,
                                           color: Colors.white.withValues(
-                                            alpha: 0.85,
+                                            alpha: 0.7,
                                           ),
-                                          size: 14,
+                                          size: 13,
                                         ),
-                                        const SizedBox(width: 6),
+                                        const SizedBox(width: 5),
                                         Expanded(
                                           child: Text(
-                                            agent.city,
+                                            agent.displayCity,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
                                               color: Colors.white.withValues(
-                                                alpha: 0.85,
+                                                alpha: 0.75,
                                               ),
                                               fontSize: 12,
                                               fontWeight: FontWeight.w500,
-                                              shadows: const [
-                                                Shadow(
-                                                  color: Colors.black87,
-                                                  blurRadius: 8,
-                                                  offset: Offset(0, 2),
-                                                ),
-                                              ],
                                             ),
                                           ),
                                         ),
@@ -443,41 +361,34 @@ class InterestedAgentSwipeCard extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                            ),
-
-                            /// Details button.
-                            if (showDetailsButton) ...[
-                              const SizedBox(width: 12),
-                              GestureDetector(
-                                onTap: onDetailsTap,
-                                behavior: HitTestBehavior.opaque,
-                                child: Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.88),
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.16,
-                                        ),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
+                              if (showDetailsButton) ...[
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: onDetailsTap,
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.14,
                                       ),
-                                    ],
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.22,
+                                        ),
+                                      ),
+                                    ),
+                                    child: const Icon(
                                       Icons.info_outline_rounded,
-                                      size: 20,
-                                      color: Colors.black87,
+                                      size: 19,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ],
@@ -486,81 +397,38 @@ class InterestedAgentSwipeCard extends StatelessWidget {
               ),
             ),
           ),
-
-          /// Buttons below the card, not inside the image.
-          /// Solid background hides the preview card behind, same as agent side.
-          if (showActions)
-            Container(
-              width: double.infinity,
-              color: actionAreaBackground,
-              padding: const EdgeInsets.only(top: 8, bottom: 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _CircleActionButton(
-                    onTap: onDislikeTap,
-                    backgroundColor: actionBackground,
-                    iconColor: const Color(0xFFEF4444),
-                    icon: HugeIcons.strokeRoundedCancel01,
-                    shadowColor: shadowColor,
-                  ),
-                  const SizedBox(width: 22),
-                  _CircleActionButton(
-                    onTap: onLikeTap,
-                    backgroundColor: actionBackground,
-                    iconColor: const Color(0xFF10B981),
-                    icon: HugeIcons.strokeRoundedFavourite,
-                    shadowColor: shadowColor,
-                  ),
-                ],
-              ),
+          if (showActions) ...[
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElegantSwipeActionButton(
+                  onTap: onDislikeTap,
+                  icon: HugeIcons.strokeRoundedCancel01,
+                  iconColor: const Color(0xFFEF4444),
+                  borderColor: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                  backgroundColor: isDarkMode
+                      ? const Color(0xFF1A1A1A)
+                      : Colors.white,
+                  shadowColor: shadowColor,
+                ),
+                const SizedBox(width: 28),
+                ElegantSwipeActionButton(
+                  onTap: onLikeTap,
+                  icon: HugeIcons.strokeRoundedFavourite,
+                  iconColor: AppColors.accent,
+                  borderColor: AppColors.accent.withValues(alpha: 0.45),
+                  backgroundColor: isDarkMode
+                      ? const Color(0xFF1A1A1A)
+                      : Colors.white,
+                  shadowColor: shadowColor,
+                  filled: true,
+                ),
+              ],
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CircleActionButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final Color backgroundColor;
-  final Color iconColor;
-  final Color shadowColor;
-  final dynamic icon;
-
-  const _CircleActionButton({
-    required this.onTap,
-    required this.backgroundColor,
-    required this.iconColor,
-    required this.icon,
-    required this.shadowColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
+            const SizedBox(height: 8),
           ],
-        ),
-        child: Center(
-          child: HugeIcon(
-            icon: icon,
-            color: iconColor,
-            size: 22,
-          ),
-        ),
+        ],
       ),
     );
   }

@@ -12,6 +12,7 @@ class ChatMessageModel {
   final String text;
   final DateTime sentAt;
   final bool isRead;
+  final bool isEdited;
 
   const ChatMessageModel({
     required this.id,
@@ -22,6 +23,7 @@ class ChatMessageModel {
     required this.text,
     required this.sentAt,
     required this.isRead,
+    this.isEdited = false,
   });
 
   bool get isFromClient => sender == ChatSenderType.client;
@@ -31,6 +33,8 @@ class ChatMessageModel {
     required Map<String, dynamic> json,
     required int clientId,
     required int agentId,
+    int? clientUserId,
+    int? agentUserId,
   }) {
     final senderId = _parseSenderId(json);
 
@@ -42,13 +46,25 @@ class ChatMessageModel {
           0,
       senderId: senderId,
       agentId: agentId,
-      sender: senderId == clientId ? ChatSenderType.client : ChatSenderType.agent,
+      sender: _resolveSenderType(
+        senderId: senderId,
+        clientId: clientId,
+        agentId: agentId,
+        clientUserId: clientUserId,
+        agentUserId: agentUserId,
+      ),
       text: json['content']?.toString() ?? json['text']?.toString() ?? '',
       sentAt: _parseDate(json['sentAt']) ??
           _parseDate(json['sent_at']) ??
           DateTime.now(),
       isRead: _parseBool(json['isRead']) ??
           _parseBool(json['is_read']) ??
+          _parseBool(json['read']) ??
+          _parseBool(json['read_by_peer']) ??
+          _parseBool(json['readByPeer']) ??
+          false,
+      isEdited: _parseBool(json['isEdited']) ??
+          _parseBool(json['is_edited']) ??
           false,
     );
   }
@@ -62,6 +78,7 @@ class ChatMessageModel {
     String? text,
     DateTime? sentAt,
     bool? isRead,
+    bool? isEdited,
   }) {
     return ChatMessageModel(
       id: id ?? this.id,
@@ -72,6 +89,7 @@ class ChatMessageModel {
       text: text ?? this.text,
       sentAt: sentAt ?? this.sentAt,
       isRead: isRead ?? this.isRead,
+      isEdited: isEdited ?? this.isEdited,
     );
   }
 
@@ -81,6 +99,8 @@ class ChatMessageModel {
     required int clientId,
     required int agentId,
     required String text,
+    int? clientUserId,
+    int? agentUserId,
   }) {
     final tempId = -DateTime.now().microsecondsSinceEpoch;
 
@@ -89,12 +109,48 @@ class ChatMessageModel {
       chatId: chatId,
       senderId: senderId,
       agentId: agentId,
-      sender: senderId == clientId ? ChatSenderType.client : ChatSenderType.agent,
+      sender: _resolveSenderType(
+        senderId: senderId,
+        clientId: clientId,
+        agentId: agentId,
+        clientUserId: clientUserId,
+        agentUserId: agentUserId,
+      ),
       text: text,
       sentAt: DateTime.now(),
       isRead: false,
     );
   }
+}
+
+ChatSenderType _resolveSenderType({
+  required int senderId,
+  required int clientId,
+  required int agentId,
+  int? clientUserId,
+  int? agentUserId,
+}) {
+  if (senderId <= 0) return ChatSenderType.agent;
+
+  if (clientId > 0 && senderId == clientId) {
+    return ChatSenderType.client;
+  }
+
+  final resolvedClientUserId = clientUserId ?? 0;
+  if (resolvedClientUserId > 0 && senderId == resolvedClientUserId) {
+    return ChatSenderType.client;
+  }
+
+  if (agentId > 0 && senderId == agentId) {
+    return ChatSenderType.agent;
+  }
+
+  final resolvedAgentUserId = agentUserId ?? 0;
+  if (resolvedAgentUserId > 0 && senderId == resolvedAgentUserId) {
+    return ChatSenderType.agent;
+  }
+
+  return ChatSenderType.agent;
 }
 
 int _parseSenderId(Map<String, dynamic> json) {

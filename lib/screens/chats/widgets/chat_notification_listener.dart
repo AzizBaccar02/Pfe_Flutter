@@ -3,19 +3,32 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:provider/provider.dart';
+
+import '../../../conf/theme_provider.dart';
 
 import '../../../models/chat_conversation_summary_model.dart';
+import '../../../models/chat_message_model.dart';
+import '../../../services/app_navigator.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/chat_active_conversation_tracker.dart';
 import '../../../services/chat_conversation_display_name_service.dart';
+import '../../../services/chat_local_read_cursor.dart';
+import '../../../services/chat_realtime_hub.dart';
 import '../../../services/chat_service.dart';
+import '../../../utils/chat_unread_merge.dart';
 import '../chat_conversation_screen.dart';
+
+typedef ChatsTabActivePredicate = bool Function();
 
 class ChatNotificationListener extends StatefulWidget {
   final Widget child;
-  final bool isChatsTabActive;
+  final ChatsTabActivePredicate isChatsTabActive;
   final ValueChanged<int>? onUnreadCountChanged;
   final Future<void> Function()? onChatOpened;
+  final bool useGlobalTopInset;
 
   const ChatNotificationListener({
     super.key,
@@ -23,6 +36,7 @@ class ChatNotificationListener extends StatefulWidget {
     required this.isChatsTabActive,
     this.onUnreadCountChanged,
     this.onChatOpened,
+    this.useGlobalTopInset = false,
   });
 
   @override
@@ -32,6 +46,7 @@ class ChatNotificationListener extends StatefulWidget {
 
 class _ChatNotificationListenerState extends State<ChatNotificationListener> {
   Timer? _hideTimer;
+  StreamSubscription<Map<String, dynamic>>? _hubSubscription;
 
   bool _isSyncing = false;
   bool _hasSeededInitialState = false;
@@ -42,23 +57,24 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
   ChatConversationSummaryModel? _activeNotificationChat;
 
   final Map<int, _ChatNotificationSnapshot> _snapshots = {};
+  List<ChatConversationSummaryModel> _cachedChats = [];
 
   @override
   void initState() {
     super.initState();
     _bootstrapListener();
+    _hubSubscription = ChatRealtimeHub.instance.onInboxEvent.listen(
+      _handleInboxEvent,
+    );
+    unawaited(ChatRealtimeHub.instance.ensureStarted());
   }
 
   @override
   void didUpdateWidget(covariant ChatNotificationListener oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (widget.isChatsTabActive && !oldWidget.isChatsTabActive) {
+    if (widget.isChatsTabActive()) {
       _hideBanner();
-      _syncChats();
-    }
-
-    if (!widget.isChatsTabActive && oldWidget.isChatsTabActive) {
       _syncChats();
     }
   }
@@ -66,7 +82,71 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _hubSubscription?.cancel();
     super.dispose();
+  }
+
+  void _handleInboxEvent(Map<String, dynamic> data) {
+    if (!ChatRealtimeHub.isMessageRelatedEvent(data)) return;
+
+    if (!widget.isChatsTabActive()) {
+      unawaited(_tryShowBannerFromInboxEvent(data));
+    }
+
+    unawaited(_syncChats());
+  }
+
+  Future<void> _tryShowBannerFromInboxEvent(Map<String, dynamic> data) async {
+    if (_currentUserId <= 0) return;
+
+    final rawChat = data['chat'];
+    ChatConversationSummaryModel? chat;
+
+    if (rawChat is Map) {
+      try {
+        chat = ChatConversationSummaryModel.fromJson(
+          Map<String, dynamic>.from(rawChat),
+        );
+      } catch (_) {
+        chat = null;
+      }
+    }
+
+    final rawMessage = data['message'];
+    if (chat != null && rawMessage is Map) {
+      try {
+        final message = ChatMessageModel.fromJson(
+          json: Map<String, dynamic>.from(rawMessage),
+          clientId: chat.client?.id ?? 0,
+          agentId: chat.agent?.id ?? 0,
+          clientUserId: chat.client?.userId,
+          agentUserId: chat.agent?.userId,
+        );
+
+        if (message.senderId == _currentUserId) return;
+
+        final lastSummary = ChatLastMessageSummary(
+          id: message.id,
+          content: message.text,
+          senderId: message.senderId,
+          isRead: false,
+          sentAt: message.sentAt,
+        );
+
+        chat = ChatLocalReadCursor.instance.applyToSummary(
+          chat.copyWith(lastMessage: lastSummary),
+          _currentUserId,
+        );
+      } catch (_) {
+        // Fall back to summary-only banner below.
+      }
+    }
+
+    if (chat == null || chat.id <= 0) return;
+    if (chat.lastMessage?.senderId == _currentUserId) return;
+    if (ChatActiveConversationTracker.instance.isViewing(chat.id)) return;
+
+    await _showBanner(chat);
   }
 
   Future<void> _bootstrapListener() async {
@@ -89,20 +169,23 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
     _isSyncing = true;
 
     try {
+      await ChatLocalReadCursor.instance.ensureLoaded();
+
       final response = await ChatService.getCurrentUserChats();
-      final chats = response.chats;
-      final totalUnreadCount = _sumUnread(chats);
+      final chats = ChatUnreadMerge.mergeLists(
+        serverChats: response.chats,
+        previousChats: _cachedChats,
+        viewerUserId: _currentUserId,
+      );
+      _cachedChats = chats;
+      final totalUnreadCount = _sumUnread(chats, _currentUserId);
 
       widget.onUnreadCountChanged?.call(totalUnreadCount);
 
-      final unreadIncomingChats = chats.where((chat) {
-        final lastMessage = chat.lastMessage;
-
-        if (chat.unreadCount <= 0) return false;
-        if (lastMessage == null) return false;
-
-        return lastMessage.senderId != _currentUserId;
-      }).toList();
+      final cursor = ChatLocalReadCursor.instance;
+      final unreadIncomingChats = chats
+          .where((chat) => cursor.hasIncomingUnread(chat, _currentUserId))
+          .toList();
 
       if (!_hasSeededInitialState) {
         _seedSnapshots(chats);
@@ -110,7 +193,7 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
 
         if (!mounted) return;
 
-        if (!widget.isChatsTabActive && unreadIncomingChats.isNotEmpty) {
+        if (!widget.isChatsTabActive() && unreadIncomingChats.isNotEmpty) {
           await _showBanner(_latestChat(unreadIncomingChats));
         }
 
@@ -150,7 +233,7 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
 
       if (!mounted) return;
 
-      if (newMessageChats.isNotEmpty && !widget.isChatsTabActive) {
+      if (newMessageChats.isNotEmpty && !widget.isChatsTabActive()) {
         await _showBanner(_latestChat(newMessageChats));
       }
     } catch (_) {
@@ -196,6 +279,9 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
   }
 
   Future<void> _showBanner(ChatConversationSummaryModel chat) async {
+    if (widget.isChatsTabActive()) return;
+    if (ChatActiveConversationTracker.instance.isViewing(chat.id)) return;
+
     _hideTimer?.cancel();
 
     await ChatConversationDisplayNameService.instance.ensureLoaded();
@@ -228,8 +314,10 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
 
     _hideBanner();
 
-    await Navigator.push(
-      context,
+    final navContext = AppNavigator.context;
+    if (navContext == null || !navContext.mounted) return;
+
+    await Navigator.of(navContext).push(
       MaterialPageRoute(
         builder: (_) => ChatConversationScreen(chat: chat),
       ),
@@ -237,6 +325,7 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
 
     if (!mounted) return;
 
+    ChatUnreadMerge.trustServerUnreadForChat(chat.id);
     await widget.onChatOpened?.call();
     await _syncChats();
   }
@@ -244,6 +333,9 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
   @override
   Widget build(BuildContext context) {
     final chat = _activeNotificationChat;
+    final topInset = widget.useGlobalTopInset
+        ? MediaQuery.paddingOf(context).top + 10
+        : 16.0;
 
     return Stack(
       children: [
@@ -251,7 +343,7 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
         Positioned(
           left: 16,
           right: 16,
-          top: 16,
+          top: topInset,
           child: IgnorePointer(
             ignoring: !_isBannerVisible || chat == null,
             child: AnimatedSlide(
@@ -259,7 +351,7 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
               curve: Curves.easeOutCubic,
               offset: _isBannerVisible && chat != null
                   ? Offset.zero
-                  : const Offset(0, -1.35),
+                  : const Offset(0, -1.25),
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 220),
                 opacity: _isBannerVisible && chat != null ? 1 : 0,
@@ -281,10 +373,15 @@ class _ChatNotificationListenerState extends State<ChatNotificationListener> {
     );
   }
 
-  static int _sumUnread(List<ChatConversationSummaryModel> chats) {
+  static int _sumUnread(
+    List<ChatConversationSummaryModel> chats,
+    int viewerUserId,
+  ) {
+    final cursor = ChatLocalReadCursor.instance;
+
     return chats.fold<int>(
       0,
-      (total, chat) => total + chat.unreadCount,
+      (total, chat) => total + cursor.displayUnreadCount(chat, viewerUserId),
     );
   }
 }
@@ -304,55 +401,71 @@ class _NewMessageBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
-
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    const accentGreen = AppColors.accent;
+    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
     final backgroundColor =
-        isDarkMode ? const Color(0xFF111827) : Colors.white;
-
+        isDarkMode ? const Color(0xFF141414) : Colors.white;
     final primaryTextColor =
         isDarkMode ? Colors.white : const Color(0xFF111827);
-
     final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.62)
-        : Colors.black.withOpacity(0.56);
+        ? const Color(0xFF9CA3AF)
+        : const Color(0xFF4B5563);
+    final tertiaryTextColor = isDarkMode
+        ? const Color(0xFF6B7280)
+        : const Color(0xFF9CA3AF);
+    final labelColor = isDarkMode
+        ? AppColors.accentReadableOnDark.withValues(alpha: 0.92)
+        : AppColors.accentReadable;
+    final dividerColor = isDarkMode
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.08);
+    final closeButtonColor = isDarkMode
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
+    final shadowColor = isDarkMode
+        ? Colors.black.withValues(alpha: 0.55)
+        : Colors.black.withValues(alpha: 0.10);
+
+    final preview = chat.previewText.trim();
+    final offer = chat.offerTitle.trim();
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+          padding: const EdgeInsets.fromLTRB(14, 13, 10, 13),
           decoration: BoxDecoration(
             color: backgroundColor,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: accentGreen.withOpacity(isDarkMode ? 0.24 : 0.18),
+              color: accentGreen.withValues(alpha: isDarkMode ? 0.22 : 0.20),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(isDarkMode ? 0.32 : 0.12),
-                blurRadius: 28,
-                offset: const Offset(0, 14),
+                color: shadowColor,
+                blurRadius: 24,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 46,
-                height: 46,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
-                  color: accentGreen.withOpacity(isDarkMode ? 0.16 : 0.10),
-                  borderRadius: BorderRadius.circular(16),
+                  color: accentGreen.withValues(alpha: isDarkMode ? 0.12 : 0.10),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: Center(
+                child: const Center(
                   child: HugeIcon(
                     icon: HugeIcons.strokeRoundedMessage02,
                     color: accentGreen,
-                    size: 24,
+                    size: 22,
                   ),
                 ),
               ),
@@ -364,67 +477,77 @@ class _NewMessageBanner extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Flexible(
-                          child: Text(
-                            'New message',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: primaryTextColor,
-                              fontSize: 14.8,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.2,
-                            ),
+                        Text(
+                          'NEW MESSAGE',
+                          style: TextStyle(
+                            color: labelColor,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.6,
                           ),
                         ),
-                        const SizedBox(width: 7),
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(
-                            color: accentGreen,
-                            shape: BoxShape.circle,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: dividerColor,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 8),
                     Text(
-                      '$peerTitle • ${chat.offerTitle}',
+                      peerTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: secondaryTextColor,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
+                        color: primaryTextColor,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.25,
+                        height: 1.15,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      chat.previewText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: primaryTextColor.withOpacity(
-                          isDarkMode ? 0.82 : 0.76,
+                    if (offer.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        offer,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: tertiaryTextColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
                         ),
-                        fontSize: 13.2,
-                        fontWeight: FontWeight.w700,
                       ),
-                    ),
+                    ],
+                    if (preview.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        preview,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: secondaryTextColor,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               GestureDetector(
                 onTap: onClose,
+                behavior: HitTestBehavior.opaque,
                 child: Container(
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: isDarkMode
-                        ? Colors.white.withOpacity(0.06)
-                        : Colors.black.withOpacity(0.05),
+                    color: closeButtonColor,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(

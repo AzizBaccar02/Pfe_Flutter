@@ -3,25 +3,34 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:provider/provider.dart';
+
+import '../../../conf/theme_provider.dart';
 
 import '../../../models/app_notification_model.dart';
 import '../../../models/interested_agent_model.dart';
 import '../../../services/notification_realtime_hub.dart';
-import '../../../services/notification_router.dart';
+import '../../../services/notification_tap_handler.dart';
+import '../../offers/widgets/offers_app_bar_layout.dart';
 
 class AppNotificationListener extends StatefulWidget {
   final Widget child;
   final ValueChanged<int>? onUnreadCountChanged;
   final VoidCallback? onOpenNotifications;
+  final VoidCallback? onReviewAgentInterest;
   final ValueChanged<InterestedAgentModel>? onAgentAccepted;
+  final bool useGlobalTopInset;
 
   const AppNotificationListener({
     super.key,
     required this.child,
     this.onUnreadCountChanged,
     this.onOpenNotifications,
+    this.onReviewAgentInterest,
     this.onAgentAccepted,
+    this.useGlobalTopInset = false,
   });
 
   @override
@@ -61,22 +70,32 @@ class _AppNotificationListenerState extends State<AppNotificationListener> {
     _unreadSubscription = _hub.onUnreadCountChanged.listen((count) {
       if (!mounted) return;
 
-      widget.onUnreadCountChanged?.call(count);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onUnreadCountChanged?.call(count);
+      });
     });
 
     _notificationSubscription = _hub.onNotification.listen((notification) {
       if (!mounted || _hub.isInboxOpen) return;
 
-      setState(() {
-        _latestNotification = notification;
-        _isBannerVisible = true;
-      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _hub.isInboxOpen) return;
 
-      _hideTimer?.cancel();
-      _hideTimer = Timer(const Duration(seconds: 5), _hideBanner);
+        setState(() {
+          _latestNotification = notification;
+          _isBannerVisible = true;
+        });
+
+        _hideTimer?.cancel();
+        _hideTimer = Timer(const Duration(seconds: 5), _hideBanner);
+      });
     });
 
-    widget.onUnreadCountChanged?.call(_hub.unreadCount);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onUnreadCountChanged?.call(_hub.unreadCount);
+    });
   }
 
   void _hideBanner() {
@@ -91,24 +110,15 @@ class _AppNotificationListenerState extends State<AppNotificationListener> {
 
   Future<void> _openNotification(AppNotificationModel notification) async {
     _hideBanner();
-
-    if (notification.isActionable) {
-      final acceptedAgent =
-          await NotificationRouter.handle(context, notification);
-
-      if (acceptedAgent != null) {
-        widget.onAgentAccepted?.call(acceptedAgent);
-      }
-
-      return;
-    }
-
-    widget.onOpenNotifications?.call();
+    await NotificationTapHandler.handle(notification);
   }
 
   @override
   Widget build(BuildContext context) {
     final notification = _latestNotification;
+    final topInset = widget.useGlobalTopInset
+        ? MediaQuery.paddingOf(context).top + 10
+        : OffersAppBarLayout.headerHeight(context) + 8;
 
     return Stack(
       children: [
@@ -116,7 +126,7 @@ class _AppNotificationListenerState extends State<AppNotificationListener> {
         Positioned(
           left: 16,
           right: 16,
-          top: 16,
+          top: topInset,
           child: IgnorePointer(
             ignoring: !_isBannerVisible || notification == null,
             child: AnimatedSlide(
@@ -157,10 +167,22 @@ class _NotificationBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
-    const backgroundColor = Color(0xFF141414);
-    const primaryTextColor = Colors.white;
-    const secondaryTextColor = Color(0xFF9CA3AF);
+    const accentGreen = AppColors.accent;
+    final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
+
+    final backgroundColor =
+        isDarkMode ? const Color(0xFF141414) : Colors.white;
+    final primaryTextColor =
+        isDarkMode ? Colors.white : const Color(0xFF111827);
+    final secondaryTextColor = isDarkMode
+        ? const Color(0xFF9CA3AF)
+        : const Color(0xFF4B5563);
+    final closeButtonColor = isDarkMode
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
+    final shadowColor = isDarkMode
+        ? Colors.black.withValues(alpha: 0.45)
+        : Colors.black.withValues(alpha: 0.10);
 
     return Material(
       color: Colors.transparent,
@@ -173,11 +195,11 @@ class _NotificationBanner extends StatelessWidget {
             color: backgroundColor,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: accentGreen.withOpacity(0.24),
+              color: accentGreen.withValues(alpha: isDarkMode ? 0.24 : 0.20),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.45),
+                color: shadowColor,
                 blurRadius: 28,
                 offset: const Offset(0, 14),
               ),
@@ -189,7 +211,7 @@ class _NotificationBanner extends StatelessWidget {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: accentGreen.withOpacity(0.14),
+                  color: accentGreen.withValues(alpha: isDarkMode ? 0.14 : 0.10),
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Center(
@@ -239,7 +261,7 @@ class _NotificationBanner extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
+                    color: closeButtonColor,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(

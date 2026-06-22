@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 
 import '../../conf/theme_provider.dart';
@@ -101,6 +102,7 @@ class _ForgotPasswordOtpScreenState extends State<ForgotPasswordOtpScreen> {
         backgroundColor: isDarkMode ? Colors.black : Colors.white,
         foregroundColor: primaryTextColor,
         elevation: 0,
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Verify Code',
           style: TextStyle(
@@ -110,9 +112,16 @@ class _ForgotPasswordOtpScreenState extends State<ForgotPasswordOtpScreen> {
           ),
         ),
       ),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            20 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

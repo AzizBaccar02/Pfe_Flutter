@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../models/client_offer_model.dart';
 import '../../../services/profile_service.dart';
 

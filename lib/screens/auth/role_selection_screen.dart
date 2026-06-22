@@ -106,7 +106,7 @@ class RoleSelectionScreen extends StatelessWidget {
                             onTap: () => _goToRoleIntro(context, 'AGENT'),
                             child: const Center(
                               child: Text(
-                                "I'm a freelancer",
+                                "I'm an agent",
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 18,

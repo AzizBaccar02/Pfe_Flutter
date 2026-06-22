@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,7 +10,9 @@ import 'package:image_picker/image_picker.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../widgets/custom_text_field.dart';
 import '../../../widgets/primary_button.dart';
+import '../../../services/app_realtime_coordinator.dart';
 import '../../../services/offer_service.dart';
+import '../../../services/subscription_service.dart';
 import '../../subscription/widgets/usage_limit_dialog.dart';
 
 class CreateOfferScreen extends StatefulWidget {
@@ -27,6 +31,7 @@ class CreateOfferScreen extends StatefulWidget {
 
 class _CreateOfferScreenState extends State<CreateOfferScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _scrollController = ScrollController();
 
   final TextEditingController titleController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
@@ -36,7 +41,7 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
 
   final ImagePicker _picker = ImagePicker();
 
-  final List<String> _categories = [
+  static const List<String> _defaultCategories = [
     'Plumbing',
     'Electricity',
     'Cleaning',
@@ -48,6 +53,8 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
     'Air Conditioning',
     'Gardening',
   ];
+
+  final List<String> _categories = [];
 
   final List<String> _tunisiaGovernorates = const [
     'Tunis',
@@ -82,6 +89,90 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
   String? selectedCity;
 
   bool _isSubmitting = false;
+  bool _isLoadingCategories = true;
+  bool _validateAfterSubmit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  List<String> _mergeCategories(Iterable<String> names) {
+    final seen = <String>{};
+    final merged = <String>[];
+
+    for (final raw in names) {
+      final name = raw.trim();
+      final key = name.toLowerCase();
+      if (name.isEmpty || seen.contains(key)) continue;
+      seen.add(key);
+      merged.add(name);
+    }
+
+    merged.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return merged;
+  }
+
+  Future<void> _loadCategories() async {
+    setState(() {
+      _isLoadingCategories = true;
+    });
+
+    try {
+      final fromApi = await OfferService.fetchCategories();
+      if (!mounted) return;
+
+      setState(() {
+        _categories
+          ..clear()
+          ..addAll(
+            _mergeCategories([
+              ...fromApi.map((category) => category.name),
+              ..._defaultCategories,
+            ]),
+          );
+        _isLoadingCategories = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _categories
+          ..clear()
+          ..addAll(_mergeCategories(_defaultCategories));
+        _isLoadingCategories = false;
+      });
+    }
+  }
+
+  Future<void> _addCategory(String rawName) async {
+    final newCategory = rawName.trim();
+    if (newCategory.isEmpty) return;
+
+    final saved = await OfferService.createCategory(newCategory);
+    if (!mounted) return;
+
+    setState(() {
+      _categories
+        ..clear()
+        ..addAll(
+          _mergeCategories([
+            saved.name,
+            ..._categories,
+          ]),
+        );
+      selectedCategory = saved.name;
+    });
+
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Category "${saved.name}" saved'),
+      ),
+    );
+  }
 
   String? _validateTitle(String? value) {
     if (value == null || value.trim().isEmpty) {
@@ -152,16 +243,104 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
     return null;
   }
 
+  List<String> _collectValidationIssues() {
+    final issues = <String>[];
+
+    if (_validateTitle(titleController.text) != null) {
+      issues.add('title');
+    }
+    if (_validateDescription(descriptionController.text) != null) {
+      issues.add('description');
+    }
+    if (_validateBudget(budgetController.text) != null) {
+      issues.add('budget');
+    }
+    if (_validateCategory() != null) {
+      issues.add('category');
+    }
+    if (_validateCity() != null) {
+      issues.add('city');
+    }
+    if (_validateAddress(addressController.text) != null) {
+      issues.add('address');
+    }
+    if (_validatePostalCode(postalCodeController.text) != null) {
+      issues.add('postal code');
+    }
+
+    return issues;
+  }
+
+  void _showValidationFeedback(List<String> issues) {
+    if (!mounted) return;
+
+    setState(() {
+      _validateAfterSubmit = true;
+    });
+
+    _formKey.currentState?.validate();
+
+    if (_scrollController.hasClients) {
+      unawaited(
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+
+    final message = issues.isEmpty
+        ? 'Please complete all required fields above.'
+        : 'Please fix: ${issues.join(', ')}.';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<bool> _ensureCanCreateOffer() async {
+    try {
+      final subscription = await SubscriptionService.fetchMySubscription();
+
+      if (subscription.canCreateOffer) return true;
+
+      if (!mounted) return false;
+
+      await UsageLimitDialog.show(
+        context,
+        isAgent: false,
+        message: subscription.message?.trim().isNotEmpty == true
+            ? subscription.message!.trim()
+            : 'Your subscription is not active. Please renew to continue.',
+      );
+      return false;
+    } on SubscriptionException catch (e) {
+      // Subscription API optional locally — backend still enforces limits.
+      debugPrint('[CREATE_OFFER] subscription check skipped: ${e.message}');
+      return true;
+    }
+  }
+
   Future<void> _handleContinue() async {
     if (_isSubmitting) return;
 
-    final categoryError = _validateCategory();
-    final cityError = _validateCity();
+    FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate() ||
-        categoryError != null ||
-        cityError != null) {
-      setState(() {});
+    final issues = _collectValidationIssues();
+    final formValid = _formKey.currentState?.validate() ?? false;
+
+    if (!formValid || issues.isNotEmpty) {
+      _showValidationFeedback(issues);
+      return;
+    }
+
+    final budget = double.tryParse(budgetController.text.trim());
+    if (budget == null || budget <= 0) {
+      _showValidationFeedback(const ['budget']);
       return;
     }
 
@@ -170,10 +349,12 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
     });
 
     try {
+      if (!await _ensureCanCreateOffer()) return;
+
       await OfferService.createOffer(
         title: titleController.text.trim(),
         description: descriptionController.text.trim(),
-        budget: double.parse(budgetController.text.trim()),
+        budget: budget,
         category: selectedCategory!,
         city: selectedCity!,
         address: addressController.text.trim(),
@@ -186,15 +367,37 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Offer created successfully'),
+          behavior: SnackBarBehavior.floating,
         ),
       );
+
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'offer_created');
 
       if (widget.onCreated != null) {
         widget.onCreated!();
       } else if (Navigator.of(context).canPop()) {
         Navigator.pop(context, true);
       }
-      
+    } on OfferPartialCreateException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Offer created, but photos failed: ${e.imageError}',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'offer_created_partial');
+
+      if (widget.onCreated != null) {
+        widget.onCreated!();
+      } else if (Navigator.of(context).canPop()) {
+        Navigator.pop(context, true);
+      }
     } on OfferException catch (e) {
       if (!mounted) return;
 
@@ -208,15 +411,27 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(e.message),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
-    } catch (_) {
+    } on SubscriptionException catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      debugPrint('[CREATE_OFFER] $e');
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Something went wrong. Please try again.'),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -374,6 +589,8 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (context) {
+        var isSavingCategory = false;
+
         return StatefulBuilder(
           builder: (context, setModalState) {
             void filterCategories(String query) {
@@ -465,7 +682,16 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  if (filteredCategories.isNotEmpty)
+                  if (_isLoadingCategories)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: isDarkMode ? Colors.white : Colors.black,
+                        ),
+                      ),
+                    )
+                  else if (filteredCategories.isNotEmpty)
                     Flexible(
                       child: ListView.builder(
                         shrinkWrap: true,
@@ -536,22 +762,33 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
                   if (query.isNotEmpty && !exactExists) ...[
                     const SizedBox(height: 8),
                     GestureDetector(
-                      onTap: () {
-                        final newCategory = query.trim();
+                      onTap: isSavingCategory
+                          ? null
+                          : () async {
+                              setModalState(() {
+                                isSavingCategory = true;
+                              });
 
-                        setState(() {
-                          _categories.add(newCategory);
-                          selectedCategory = newCategory;
-                        });
+                              try {
+                                await _addCategory(query);
+                              } catch (error) {
+                                if (!context.mounted) return;
 
-                        Navigator.pop(context);
+                                setModalState(() {
+                                  isSavingCategory = false;
+                                });
 
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Category "$newCategory" added'),
-                          ),
-                        );
-                      },
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      error is OfferException
+                                          ? error.message
+                                          : 'Could not save category. Please try again.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
@@ -566,15 +803,27 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
                         ),
                         child: Row(
                           children: [
-                            HugeIcon(
-                              icon: HugeIcons.strokeRoundedAdd01,
-                              color: isDarkMode ? Colors.white : Colors.black,
-                              size: 18,
-                            ),
+                            if (isSavingCategory)
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: isDarkMode ? Colors.white : Colors.black,
+                                ),
+                              )
+                            else
+                              HugeIcon(
+                                icon: HugeIcons.strokeRoundedAdd01,
+                                color: isDarkMode ? Colors.white : Colors.black,
+                                size: 18,
+                              ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'Add "$query"',
+                                isSavingCategory
+                                    ? 'Saving "$query"...'
+                                    : 'Add "$query"',
                                 style: TextStyle(
                                   color: isDarkMode
                                       ? Colors.white
@@ -773,7 +1022,7 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
     required bool isDarkMode,
     required String? value,
     required String placeholder,
-    required VoidCallback onTap,
+    VoidCallback? onTap,
     required bool hasError,
     required dynamic icon,
   }) {
@@ -889,7 +1138,8 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
+        leading: AppBackButton(
+          isDarkMode: isDarkMode,
           onPressed: () {
             if (widget.onBack != null) {
               widget.onBack!();
@@ -897,13 +1147,6 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
               Navigator.pop(context);
             }
           },
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: isDarkMode
-                ? Colors.white.withOpacity(0.7)
-                : Colors.black.withOpacity(0.7),
-            size: 18,
-          ),
         ),
         title: Text(
           'Create Offer',
@@ -916,9 +1159,13 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
+          controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
           child: Form(
             key: _formKey,
+            autovalidateMode: _validateAfterSubmit
+                ? AutovalidateMode.onUserInteraction
+                : AutovalidateMode.disabled,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1095,8 +1342,12 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
                       _pickerField(
                         isDarkMode: isDarkMode,
                         value: selectedCategory,
-                        placeholder: 'Select a category',
-                        onTap: () => _openCategoryBottomSheet(isDarkMode),
+                        placeholder: _isLoadingCategories
+                            ? 'Loading categories...'
+                            : 'Select a category',
+                        onTap: _isLoadingCategories
+                            ? null
+                            : () => _openCategoryBottomSheet(isDarkMode),
                         hasError: categoryError != null,
                         icon: HugeIcons.strokeRoundedWork,
                       ),
@@ -1195,7 +1446,7 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
 
                 const SizedBox(height: 26),
                 PrimaryButton(
-                  text: _isSubmitting ? 'Creating...' : 'Continue',
+                  text: _isSubmitting ? 'Creating...' : 'Create offer',
                   onPressed: _isSubmitting
                       ? () {}
                       : () {
@@ -1213,6 +1464,7 @@ class _CreateOfferScreenState extends State<CreateOfferScreen> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     titleController.dispose();
     descriptionController.dispose();
     budgetController.dispose();

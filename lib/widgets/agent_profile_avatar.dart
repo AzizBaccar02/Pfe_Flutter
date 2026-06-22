@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/profile_service.dart';
+import '../utils/agent_identity_privacy.dart';
 
 class AgentProfileAvatar extends StatelessWidget {
   final String? photoUrl;
@@ -11,6 +12,9 @@ class AgentProfileAvatar extends StatelessWidget {
   final Color? backgroundColor;
   final Color? initialsColor;
 
+  /// When true, only initials are shown (pre-acceptance client view).
+  final bool hidePhoto;
+
   const AgentProfileAvatar({
     super.key,
     this.photoUrl,
@@ -18,13 +22,19 @@ class AgentProfileAvatar extends StatelessWidget {
     this.radius = 30,
     this.backgroundColor,
     this.initialsColor,
+    this.hidePhoto = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final resolved = ProfileService.resolveMediaUrl(photoUrl?.trim() ?? '');
-    final bg = backgroundColor ?? const Color(0xFF1F2937);
-    final fg = initialsColor ?? Colors.white;
+    final resolved = hidePhoto
+        ? null
+        : ProfileService.resolveMediaUrl(photoUrl?.trim() ?? '');
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = backgroundColor ??
+        (isDark ? const Color(0xFF1F2937) : const Color(0xFFE5E7EB));
+    final fg = initialsColor ??
+        (isDark ? Colors.white : const Color(0xFF374151));
 
     if (resolved != null && resolved.isNotEmpty) {
       return ClipOval(
@@ -37,7 +47,7 @@ class AgentProfileAvatar extends StatelessWidget {
             radius: radius,
             backgroundColor: bg,
             child: Text(
-              _initials(displayName),
+              AgentIdentityPrivacy.initials(displayName),
               style: TextStyle(
                 color: fg,
                 fontWeight: FontWeight.w800,
@@ -53,7 +63,7 @@ class AgentProfileAvatar extends StatelessWidget {
       radius: radius,
       backgroundColor: bg,
       child: Text(
-        _initials(displayName),
+        AgentIdentityPrivacy.initials(displayName),
         style: TextStyle(
           color: fg,
           fontWeight: FontWeight.w800,
@@ -61,20 +71,5 @@ class AgentProfileAvatar extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _initials(String name) {
-    final parts = name
-        .split(RegExp(r'\s+'))
-        .where((part) => part.isNotEmpty)
-        .toList();
-
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) {
-      return parts.first.substring(0, 1).toUpperCase();
-    }
-
-    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
-        .toUpperCase();
   }
 }

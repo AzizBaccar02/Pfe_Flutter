@@ -1,6 +1,7 @@
 // lib/screens/chats/widgets/message_bubble.dart
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 
 import '../../../models/chat_message_model.dart';
 
@@ -92,6 +93,19 @@ class MessageBubble extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (message.isEdited) ...[
+                        Text(
+                          'edited',
+                          style: TextStyle(
+                            color: metaColor,
+                            fontSize: 10,
+                            fontStyle: FontStyle.italic,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.15,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
                       Text(
                         message.text,
                         style: TextStyle(
@@ -121,7 +135,7 @@ class MessageBubble extends StatelessWidget {
                                   : Icons.done_rounded,
                               size: 15,
                               color: message.isRead
-                                  ? const Color(0xFF10B981)
+                                  ? AppColors.accent
                                   : metaColor,
                             ),
                           ],

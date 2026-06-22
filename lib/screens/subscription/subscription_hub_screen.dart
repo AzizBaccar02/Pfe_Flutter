@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
-import '../../conf/app_colors.dart';
 import '../../conf/theme_provider.dart';
 import '../../models/subscription_history_item.dart';
 import '../../models/subscription_model.dart';
@@ -61,9 +62,16 @@ class _SubscriptionHubScreenState extends State<SubscriptionHubScreen> {
 
       if (!mounted) return;
 
+      var subscription = results[0] as MySubscriptionModel;
+      final plans = results[1] as List<SubscriptionPlanModel>;
+
+      subscription = await _syncIncompleteCheckoutIfNeeded(subscription);
+
+      if (!mounted) return;
+
       setState(() {
-        _subscription = results[0] as MySubscriptionModel;
-        _plans = results[1] as List<SubscriptionPlanModel>;
+        _subscription = subscription;
+        _plans = plans;
         _isLoading = false;
       });
     } on SubscriptionException catch (e) {
@@ -78,6 +86,24 @@ class _SubscriptionHubScreenState extends State<SubscriptionHubScreen> {
         _errorMessage = 'Something went wrong. Please try again.';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<MySubscriptionModel> _syncIncompleteCheckoutIfNeeded(
+    MySubscriptionModel data,
+  ) async {
+    final sub = data.subscription;
+    if (sub == null) return data;
+
+    final status = sub.status.toUpperCase();
+    if (status != 'INCOMPLETE' || data.hasActiveSubscription) {
+      return data;
+    }
+
+    try {
+      return await SubscriptionService.syncSubscription();
+    } on SubscriptionException {
+      return data;
     }
   }
 
@@ -122,9 +148,23 @@ class _SubscriptionHubScreenState extends State<SubscriptionHubScreen> {
     });
   }
 
+  SubscriptionHistoryType _historyTypeForStatus(String status) {
+    switch (status.toUpperCase()) {
+      case 'INCOMPLETE':
+        return SubscriptionHistoryType.checkoutStarted;
+      case 'ACTIVE':
+        return SubscriptionHistoryType.activated;
+      case 'CANCELED':
+        return SubscriptionHistoryType.canceled;
+      case 'EXPIRED':
+        return SubscriptionHistoryType.expired;
+      default:
+        return SubscriptionHistoryType.subscriptionCreated;
+    }
+  }
+
   List<SubscriptionHistoryItem> _buildHistory(MySubscriptionModel data) {
     final items = <SubscriptionHistoryItem>[];
-    final sub = data.subscription;
     final free = data.freeUsage;
     final usageLabel =
         widget.isAgent ? 'offer reactions' : 'offer posts';
@@ -135,123 +175,27 @@ class _SubscriptionHubScreenState extends State<SubscriptionHubScreen> {
         title: 'Free tier usage',
         subtitle:
             '${free.usedFreeUsageCount} of ${free.freeUsageLimit} $usageLabel used · ${free.remainingFreeUsageCount} remaining',
-        date: sub?.updatedAt ?? sub?.createdAt,
+        date: data.subscription?.updatedAt ?? data.subscription?.createdAt,
         isHighlight: data.isOnFreePlan,
       ),
     );
 
-    if (sub == null) {
-      return items.reversed.toList();
-    }
+    for (final sub in data.history) {
+      final planName = sub.plan?.name ?? 'JobMatch Plus';
+      final usageSuffix = sub.usageLimit > 0
+          ? ' · ${sub.usedUsageCount}/${sub.usageLimit} uses'
+          : '';
+      final periodSuffix = sub.endDate != null
+          ? ' · ends ${_formatDate(sub.endDate)}'
+          : '';
 
-    if (sub.createdAt != null) {
       items.add(
         SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.subscriptionCreated,
-          title: 'Subscription record created',
-          subtitle: sub.plan?.name ?? 'JobMatch Plus',
-          date: sub.createdAt,
-        ),
-      );
-    }
-
-    final status = sub.status.toUpperCase();
-
-    if (status == 'INCOMPLETE') {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.checkoutStarted,
-          title: 'Checkout started',
-          subtitle: 'Complete payment to activate your plan',
-          date: sub.updatedAt ?? sub.createdAt,
-        ),
-      );
-    }
-
-    if (sub.startDate != null &&
-        (status == 'ACTIVE' ||
-            status == 'CANCELED' ||
-            status == 'EXPIRED')) {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.activated,
-          title: 'Plan activated',
-          subtitle: sub.plan?.name ?? 'Subscription',
-          date: sub.startDate,
+          type: _historyTypeForStatus(sub.status),
+          title: planName,
+          subtitle: '${sub.statusLabel}$usageSuffix$periodSuffix',
+          date: sub.createdAt ?? sub.startDate ?? sub.updatedAt,
           isHighlight: sub.hasActiveSubscription,
-        ),
-      );
-    }
-
-    if (sub.usageLimit > 0) {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.usageConsumed,
-          title: 'Subscription usage',
-          subtitle:
-              '${sub.usedUsageCount} of ${sub.usageLimit} uses consumed · ${sub.remainingUsageCount} left',
-          date: sub.updatedAt,
-          isHighlight: data.hasActiveSubscription && sub.usageLimit > 0,
-        ),
-      );
-    }
-
-    if (sub.endDate != null) {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.periodEnd,
-          title: sub.cancelAtPeriodEnd
-              ? 'Ends at period close'
-              : 'Current period ends',
-          subtitle: _formatDate(sub.endDate!),
-          date: sub.endDate,
-        ),
-      );
-    }
-
-    if (status == 'CANCELED') {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.canceled,
-          title: 'Subscription canceled',
-          subtitle: sub.cancelAtPeriodEnd
-              ? 'Access until ${_formatDate(sub.endDate)}'
-              : 'Plan is no longer active',
-          date: sub.updatedAt,
-        ),
-      );
-    }
-
-    if (status == 'EXPIRED') {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.expired,
-          title: 'Subscription expired',
-          subtitle: 'Renew to continue with premium limits',
-          date: sub.endDate ?? sub.updatedAt,
-        ),
-      );
-    }
-
-    if (status == 'PAST_DUE' || status == 'UNPAID') {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.updated,
-          title: sub.statusLabel,
-          subtitle: 'Update your payment method in billing',
-          date: sub.updatedAt,
-          isHighlight: true,
-        ),
-      );
-    }
-
-    if (sub.updatedAt != null && items.length > 1) {
-      items.add(
-        SubscriptionHistoryItem(
-          type: SubscriptionHistoryType.updated,
-          title: 'Last update',
-          subtitle: 'Status: ${sub.statusLabel}',
-          date: sub.updatedAt,
         ),
       );
     }
@@ -288,6 +232,7 @@ class _SubscriptionHubScreenState extends State<SubscriptionHubScreen> {
         backgroundColor: backgroundColor,
         elevation: 0,
         scrolledUnderElevation: 0,
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Subscription',
           style: TextStyle(
@@ -296,7 +241,7 @@ class _SubscriptionHubScreenState extends State<SubscriptionHubScreen> {
             fontSize: 17,
           ),
         ),
-        iconTheme: IconThemeData(color: primary),
+        iconTheme: IconThemeData(color: AppColors.navigation(isDarkMode)),
         actions: [
           IconButton(
             onPressed: _isLoading ? null : _loadData,

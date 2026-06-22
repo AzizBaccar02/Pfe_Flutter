@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../../conf/theme_provider.dart';
+import '../../services/support_service.dart';
 import 'widgets/settings_section_title.dart';
 import 'widgets/settings_tile.dart';
 
@@ -129,243 +131,77 @@ class HelpSupportScreen extends StatelessWidget {
     );
   }
 
-  void _showContactSupport(BuildContext context, bool isDarkMode) {
-    final messageController = TextEditingController();
-    final backgroundColor =
-        isDarkMode ? const Color(0xFF101010) : Colors.white;
-    final fieldColor =
-        isDarkMode ? const Color(0xFF181818) : const Color(0xFFF6F6F6);
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.62)
-        : Colors.black.withOpacity(0.58);
+  Future<void> _showFeedbackSheet(
+    BuildContext context, {
+    required bool isDarkMode,
+    required String title,
+    required String subtitle,
+    required String hint,
+    required String buttonLabel,
+    required String emptyMessageError,
+    required String genericErrorMessage,
+    required Future<String> Function(String message) send,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
 
-    showModalBottomSheet(
+    final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: backgroundColor,
+      backgroundColor: isDarkMode ? const Color(0xFF101010) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
       ),
-      builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            14,
-            20,
-            MediaQuery.of(sheetContext).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 46,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: isDarkMode ? Colors.white24 : Colors.black12,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Contact Support',
-                style: TextStyle(
-                  color: primaryTextColor,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Describe your issue and the frontend will prepare your support request.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: secondaryTextColor,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: messageController,
-                minLines: 4,
-                maxLines: 6,
-                style: TextStyle(
-                  color: primaryTextColor,
-                  fontSize: 14.5,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Tell us what you need help with...',
-                  hintStyle: TextStyle(
-                    color: secondaryTextColor,
-                    fontSize: 14,
-                  ),
-                  filled: true,
-                  fillColor: fieldColor,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
+      builder: (_) => _FeedbackBottomSheet(
+        isDarkMode: isDarkMode,
+        title: title,
+        subtitle: subtitle,
+        hint: hint,
+        buttonLabel: buttonLabel,
+        emptyMessageError: emptyMessageError,
+        genericErrorMessage: genericErrorMessage,
+        send: send,
+      ),
+    );
 
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Your support request has been prepared successfully.',
-                        ),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDarkMode ? Colors.white : Colors.black,
-                    foregroundColor: isDarkMode ? Colors.black : Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: const Text(
-                    'Send Request',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    if (result == null || result.isEmpty) return;
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(result),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showContactSupport(BuildContext context, bool isDarkMode) {
+    _showFeedbackSheet(
+      context,
+      isDarkMode: isDarkMode,
+      title: 'Contact Support',
+      subtitle:
+          'Describe your issue and we will send it to the JobMatch support team.',
+      hint: 'Tell us what you need help with...',
+      buttonLabel: 'Send Request',
+      emptyMessageError: 'Please describe your issue before sending.',
+      genericErrorMessage:
+          'Unable to send your support request. Please try again.',
+      send: (message) => SupportService.sendSupportRequest(message: message),
     );
   }
 
   void _showBugReport(BuildContext context, bool isDarkMode) {
-    final bugController = TextEditingController();
-    final backgroundColor =
-        isDarkMode ? const Color(0xFF101010) : Colors.white;
-    final fieldColor =
-        isDarkMode ? const Color(0xFF181818) : const Color(0xFFF6F6F6);
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.62)
-        : Colors.black.withOpacity(0.58);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: backgroundColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-      ),
-      builder: (sheetContext) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            14,
-            20,
-            MediaQuery.of(sheetContext).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 46,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: isDarkMode ? Colors.white24 : Colors.black12,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                'Report a Problem',
-                style: TextStyle(
-                  color: primaryTextColor,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Tell us what went wrong so the issue can be reviewed later.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: secondaryTextColor,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 18),
-              TextField(
-                controller: bugController,
-                minLines: 4,
-                maxLines: 6,
-                style: TextStyle(
-                  color: primaryTextColor,
-                  fontSize: 14.5,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Describe the bug or unexpected behavior...',
-                  hintStyle: TextStyle(
-                    color: secondaryTextColor,
-                    fontSize: 14,
-                  ),
-                  filled: true,
-                  fillColor: fieldColor,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(sheetContext);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Your problem report has been saved successfully.',
-                        ),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isDarkMode ? Colors.white : Colors.black,
-                    foregroundColor: isDarkMode ? Colors.black : Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: const Text(
-                    'Submit Report',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    _showFeedbackSheet(
+      context,
+      isDarkMode: isDarkMode,
+      title: 'Report a Problem',
+      subtitle:
+          'Tell us what went wrong and we will send it to the JobMatch support team.',
+      hint: 'Describe the bug or unexpected behavior...',
+      buttonLabel: 'Submit Report',
+      emptyMessageError: 'Please describe the problem before submitting.',
+      genericErrorMessage:
+          'Unable to send your problem report. Please try again.',
+      send: (message) => SupportService.sendProblemReport(message: message),
     );
   }
 
@@ -386,14 +222,7 @@ class HelpSupportScreen extends StatelessWidget {
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: isDarkMode ? Colors.white : Colors.black,
-            size: 20,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         centerTitle: true,
         title: Text(
           'Help & Support',
@@ -452,6 +281,201 @@ class HelpSupportScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _FeedbackBottomSheet extends StatefulWidget {
+  final bool isDarkMode;
+  final String title;
+  final String subtitle;
+  final String hint;
+  final String buttonLabel;
+  final String emptyMessageError;
+  final String genericErrorMessage;
+  final Future<String> Function(String message) send;
+
+  const _FeedbackBottomSheet({
+    required this.isDarkMode,
+    required this.title,
+    required this.subtitle,
+    required this.hint,
+    required this.buttonLabel,
+    required this.emptyMessageError,
+    required this.genericErrorMessage,
+    required this.send,
+  });
+
+  @override
+  State<_FeedbackBottomSheet> createState() => _FeedbackBottomSheetState();
+}
+
+class _FeedbackBottomSheetState extends State<_FeedbackBottomSheet> {
+  final TextEditingController _messageController = TextEditingController();
+  bool _isSending = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final message = _messageController.text.trim();
+
+    if (message.isEmpty) {
+      setState(() => _errorMessage = widget.emptyMessageError);
+      return;
+    }
+
+    setState(() {
+      _isSending = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final responseMessage = await widget.send(message);
+      if (!mounted) return;
+      Navigator.pop(context, responseMessage);
+    } on SupportServiceException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _errorMessage = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSending = false;
+        _errorMessage = widget.genericErrorMessage;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fieldColor =
+        widget.isDarkMode ? const Color(0xFF181818) : const Color(0xFFF6F6F6);
+    final primaryTextColor = widget.isDarkMode ? Colors.white : Colors.black;
+    final secondaryTextColor = widget.isDarkMode
+        ? Colors.white.withOpacity(0.62)
+        : Colors.black.withOpacity(0.58);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        14,
+        20,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 46,
+            height: 5,
+            decoration: BoxDecoration(
+              color: widget.isDarkMode ? Colors.white24 : Colors.black12,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            widget.title,
+            style: TextStyle(
+              color: primaryTextColor,
+              fontSize: 21,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            widget.subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: secondaryTextColor,
+              fontSize: 14,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 18),
+          TextField(
+            controller: _messageController,
+            enabled: !_isSending,
+            minLines: 4,
+            maxLines: 6,
+            style: TextStyle(
+              color: primaryTextColor,
+              fontSize: 14.5,
+            ),
+            decoration: InputDecoration(
+              hintText: widget.hint,
+              hintStyle: TextStyle(
+                color: secondaryTextColor,
+                fontSize: 14,
+              ),
+              filled: true,
+              fillColor: fieldColor,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.redAccent,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: ElevatedButton(
+              onPressed: _isSending ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: widget.isDarkMode ? Colors.white : Colors.black,
+                foregroundColor: widget.isDarkMode ? Colors.black : Colors.white,
+                disabledBackgroundColor: widget.isDarkMode
+                    ? Colors.white.withOpacity(0.45)
+                    : Colors.black.withOpacity(0.45),
+                disabledForegroundColor: widget.isDarkMode
+                    ? Colors.black.withOpacity(0.55)
+                    : Colors.white.withOpacity(0.55),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              child: _isSending
+                  ? SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color:
+                            widget.isDarkMode ? Colors.black : Colors.white,
+                      ),
+                    )
+                  : Text(
+                      widget.buttonLabel,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

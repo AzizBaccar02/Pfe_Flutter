@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../../conf/app_colors.dart';
 
 class NotificationEmptyState extends StatelessWidget {
   final bool isDarkMode;
@@ -13,7 +13,7 @@ class NotificationEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode

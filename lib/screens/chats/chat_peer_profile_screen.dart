@@ -1,12 +1,15 @@
 // lib/screens/chats/chat_peer_profile_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 
 import '../../conf/theme_provider.dart';
 import '../../models/chat_conversation_summary_model.dart';
 import '../../services/chat_conversation_display_name_service.dart';
 import '../../services/profile_service.dart';
+import 'widgets/edit_conversation_name_dialog.dart';
 
 /// Full-screen contact & offer details (long-press name in chat), WhatsApp-style.
 class ChatPeerProfileScreen extends StatefulWidget {
@@ -103,202 +106,26 @@ class _ChatPeerProfileScreenState extends State<ChatPeerProfileScreen> {
   }
 
   Future<void> _editConversationNameDialog() async {
-    final isDarkMode = context.read<ThemeProvider>().isDarkMode;
-    final primaryTextColor =
-        isDarkMode ? Colors.white : const Color(0xFF111827);
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.55)
-        : Colors.black.withOpacity(0.54);
-    final shell = isDarkMode ? const Color(0xFF000000) : Colors.white;
-    final border =
-        isDarkMode ? const Color(0xFF2A2A2A) : const Color(0xFFE5E7EB);
-    final fieldFill =
-        isDarkMode ? const Color(0xFF141414) : const Color(0xFFF3F4F6);
-    const accent = Color(0xFF22C55E);
+    if (!mounted) return;
 
+    final isDarkMode = context.read<ThemeProvider>().isDarkMode;
     final initial = ChatConversationDisplayNameService.instance
             .overrideOnly(widget.chat.id) ??
         '';
-    final controller = TextEditingController(text: initial);
 
     final result = await showDialog<String?>(
       context: context,
+      useRootNavigator: true,
       barrierDismissible: true,
       barrierColor: isDarkMode
-          ? Colors.black.withOpacity(0.88)
-          : Colors.black.withOpacity(0.5),
-      builder: (dialogContext) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 400),
-            decoration: BoxDecoration(
-              color: shell,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: border),
-              boxShadow: [
-                if (!isDarkMode)
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 24,
-                    offset: const Offset(0, 12),
-                  ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 6, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Conversation name',
-                          style: TextStyle(
-                            color: primaryTextColor,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(dialogContext, null),
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(
-                          Icons.close_rounded,
-                          color: secondaryTextColor,
-                          size: 22,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Only you see this name in the chat list and header.',
-                        style: TextStyle(
-                          color: secondaryTextColor,
-                          fontSize: 13,
-                          height: 1.4,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Original: $_serverName',
-                        style: TextStyle(
-                          color: secondaryTextColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: controller,
-                        autofocus: true,
-                        maxLength: 48,
-                        style: TextStyle(
-                          color: primaryTextColor,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        decoration: InputDecoration(
-                          counterText: '',
-                          filled: true,
-                          fillColor: fieldFill,
-                          hintText: 'Leave empty to use original name',
-                          hintStyle: TextStyle(
-                            color: secondaryTextColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide(color: border),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide(color: border),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(
-                              color: accent,
-                              width: 1.4,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 1, thickness: 1, color: border),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, null),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(
-                            color: secondaryTextColor,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext, ''),
-                        child: Text(
-                          'Use default',
-                          style: TextStyle(
-                            color: secondaryTextColor.withOpacity(0.9),
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(
-                          dialogContext,
-                          controller.text.trim(),
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: accent,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text(
-                          'Save',
-                          style: TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+          ? Colors.black.withValues(alpha: 0.88)
+          : Colors.black.withValues(alpha: 0.5),
+      builder: (_) => EditConversationNameDialog(
+        serverName: _serverName,
+        initialText: initial,
+        isDarkMode: isDarkMode,
+      ),
     );
-
-    controller.dispose();
 
     if (!mounted || result == null) return;
 
@@ -307,13 +134,16 @@ class _ChatPeerProfileScreenState extends State<ChatPeerProfileScreen> {
       result.isEmpty ? null : result,
       _serverName,
     );
+
+    if (!mounted) return;
+
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final backgroundColor =
         isDarkMode ? const Color(0xFF000000) : const Color(0xFFF3F4F6);
@@ -339,14 +169,7 @@ class _ChatPeerProfileScreenState extends State<ChatPeerProfileScreen> {
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         foregroundColor: primaryTextColor,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: primaryTextColor.withOpacity(0.92),
-            size: 18,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Contact info',
           style: TextStyle(

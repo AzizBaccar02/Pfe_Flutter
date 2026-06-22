@@ -4,38 +4,16 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../conf/api_config.dart';
 import '../models/agent_profile_model.dart';
 import '../models/client_profile_model.dart';
+import '../utils/media_url_resolver.dart';
 import 'auth_service.dart';
 
 class ProfileService {
-  static String get _baseUrl {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8000';
-    }
+  static Uri _uri(String path) => ApiConfig.httpUri(path);
 
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'http://10.0.2.2:8000';
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        return 'http://127.0.0.1:8000';
-      default:
-        return 'http://127.0.0.1:8000';
-    }
-  }
-
-  static Uri _uri(String path) => Uri.parse('$_baseUrl$path');
-
-  static String? resolveMediaUrl(String? rawUrl) {
-    if (rawUrl == null) return null;
-    final value = rawUrl.trim();
-    if (value.isEmpty) return null;
-    if (value.startsWith('http://') || value.startsWith('https://')) return value;
-    return '$_baseUrl$value';
-  }
+  static String? resolveMediaUrl(String? rawUrl) => MediaUrlResolver.resolve(rawUrl);
 
   static Future<ClientProfileModel> getClientProfile() async {
     final token = await _getAccessToken();
