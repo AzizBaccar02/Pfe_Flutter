@@ -98,14 +98,18 @@ class FreeUsageModel {
 class MySubscriptionModel {
   final bool hasActiveSubscription;
   final String activeUsageSource;
+  final bool canCreateOffer;
   final SubscriptionModel? subscription;
+  final List<SubscriptionModel> history;
   final FreeUsageModel freeUsage;
   final String? message;
 
   const MySubscriptionModel({
     required this.hasActiveSubscription,
     required this.activeUsageSource,
+    required this.canCreateOffer,
     required this.subscription,
+    required this.history,
     required this.freeUsage,
     this.message,
   });
@@ -113,30 +117,73 @@ class MySubscriptionModel {
   factory MySubscriptionModel.fromJson(Map<String, dynamic> json) {
     final subscriptionJson = json['subscription'];
     final freeUsageJson = json['freeUsage'];
+    final freeUsage = freeUsageJson is Map<String, dynamic>
+        ? FreeUsageModel.fromJson(freeUsageJson)
+        : const FreeUsageModel(
+            freeUsageLimit: 0,
+            remainingFreeUsageCount: 0,
+            usedFreeUsageCount: 0,
+          );
+    final subscription = subscriptionJson is Map<String, dynamic>
+        ? SubscriptionModel.fromJson(subscriptionJson)
+        : null;
+    final historyJson = json['history'];
+    final history = historyJson is List
+        ? historyJson
+            .whereType<Map<String, dynamic>>()
+            .map(SubscriptionModel.fromJson)
+            .toList()
+        : <SubscriptionModel>[];
+    final hasActiveSubscription = json['hasActiveSubscription'] == true;
+
+    final canCreateOffer = json.containsKey('canCreateOffer')
+        ? json['canCreateOffer'] == true
+        : _resolveCanCreateOffer(
+            hasActiveSubscription: hasActiveSubscription,
+            subscription: subscription,
+            freeUsage: freeUsage,
+          );
 
     return MySubscriptionModel(
-      hasActiveSubscription: json['hasActiveSubscription'] == true,
+      hasActiveSubscription: hasActiveSubscription,
       activeUsageSource: _parseString(json['activeUsageSource']),
-      subscription: subscriptionJson is Map<String, dynamic>
-          ? SubscriptionModel.fromJson(subscriptionJson)
-          : null,
-      freeUsage: freeUsageJson is Map<String, dynamic>
-          ? FreeUsageModel.fromJson(freeUsageJson)
-          : const FreeUsageModel(
-              freeUsageLimit: 0,
-              remainingFreeUsageCount: 0,
-              usedFreeUsageCount: 0,
-            ),
+      canCreateOffer: canCreateOffer,
+      subscription: subscription,
+      history: history,
+      freeUsage: freeUsage,
       message: json['message']?.toString(),
     );
   }
 
   bool get isOnFreePlan => activeUsageSource.toUpperCase() == 'FREE';
 
-  bool get canPerformAction {
-    if (hasActiveSubscription) return true;
-    return freeUsage.hasRemaining;
+  bool get canPerformAction => canCreateOffer;
+}
+
+bool _resolveCanCreateOffer({
+  required bool hasActiveSubscription,
+  required SubscriptionModel? subscription,
+  required FreeUsageModel freeUsage,
+}) {
+  if (hasActiveSubscription) return true;
+
+  final sub = subscription;
+  if (sub != null) {
+    final status = sub.status.toUpperCase();
+    if (status != 'INCOMPLETE') {
+      return false;
+    }
+
+    final now = DateTime.now().toUtc();
+    if (sub.endDate != null && now.isAfter(sub.endDate!.toUtc())) {
+      return false;
+    }
+    if (sub.startDate != null && now.isBefore(sub.startDate!.toUtc())) {
+      return false;
+    }
   }
+
+  return freeUsage.hasRemaining;
 }
 
 int? _parseInt(dynamic value) {

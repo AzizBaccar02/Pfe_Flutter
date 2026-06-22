@@ -1,16 +1,23 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../models/client_offer_model.dart';
 import '../../../models/interested_agent_model.dart';
+import '../../../services/client_interaction_realtime.dart';
+import '../../../services/tab_auto_refresh.dart';
+import '../../../services/client_interaction_state_service.dart';
+import '../../../services/client_match_persistence.dart';
 import '../../../services/interaction_service.dart';
 import '../../../services/offer_service.dart';
+import '../../../services/agent_profile_resolver.dart';
 import '../../../services/profile_service.dart';
+import '../../../utils/agent_identity_privacy.dart';
 import '../widgets/match_created_dialog.dart';
 
 class OfferDetailScreen extends StatefulWidget {
@@ -36,11 +43,26 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
 
   List<InterestedAgentModel> _agents = [];
 
+  late final TabAutoRefresh _autoRefresh;
+
   @override
   void initState() {
     super.initState();
     _offer = widget.offer;
+    _autoRefresh = TabAutoRefresh(
+      onRefresh: ({showLoader = true}) => _loadInterestedAgents(showLoader: showLoader),
+      isTabActive: () => true,
+      pollInterval: const Duration(seconds: 12),
+      refreshWhenInactive: true,
+    );
+    _autoRefresh.attach();
     _loadInterestedAgents();
+  }
+
+  @override
+  void dispose() {
+    _autoRefresh.dispose();
+    super.dispose();
   }
 
   Future<void> _loadInterestedAgents({bool showLoader = true}) async {
@@ -52,8 +74,10 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
     }
 
     try {
-      final agents = await InteractionService.fetchInterestedAgents(
-        offerId: _offer.id,
+      final agents = await InteractionService.filterUnresolvedInterestedAgents(
+        await InteractionService.fetchInterestedAgents(
+          offerId: _offer.id,
+        ),
       );
 
       if (!mounted) return;
@@ -62,7 +86,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
         _agents = agents;
         _agentsError = null;
       });
-    } on InteractionException catch (e) {
+    } on InteractionServiceException catch (e) {
       if (!mounted) return;
       setState(() => _agentsError = e.message);
     } catch (_) {
@@ -91,6 +115,20 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
         accept: accept,
       );
 
+      if (accept) {
+        await ClientInteractionStateService.recordAccepted(
+          offerId: agent.offerId,
+          agentId: agent.id,
+          reactionId: agent.reactionId,
+        );
+      } else {
+        await ClientMatchPersistence.markRejected(
+          offerId: agent.offerId,
+          agentId: agent.id,
+        );
+      }
+      ClientInteractionRealtime.instance.notifyRefresh();
+
       if (!mounted) return;
 
       setState(() {
@@ -103,7 +141,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
       });
 
       if (accept) {
-        _showMatchDialog(agent);
+        await _showMatchDialog(agent);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -115,7 +153,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
       }
 
       widget.onOfferUpdated?.call();
-    } on InteractionException catch (e) {
+    } on InteractionServiceException catch (e) {
       if (!mounted) return;
       _showSnackBar(e.message);
     } catch (_) {
@@ -126,16 +164,36 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
     }
   }
 
-  void _showMatchDialog(InterestedAgentModel agent) {
+  Future<void> _showMatchDialog(InterestedAgentModel agent) async {
+    var agentPhoto = '';
+    var agentName = agent.name.trim();
+
+    try {
+      final profile = await AgentProfileResolver.resolve(
+        agentProfileId: agent.id,
+        agentUserId: agent.id,
+        interactionId: agent.reactionId > 0 ? agent.reactionId : null,
+        fallbackName: agent.name,
+      );
+      agentPhoto =
+          ProfileService.resolveMediaUrl(profile.photoUrl)?.trim() ?? '';
+      if (profile.displayName.trim().isNotEmpty) {
+        agentName = profile.displayName.trim();
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
         return MatchCreatedDialog(
-          clientImagePath: 'assets/images/Profil.jpg',
-          agentImagePath: agent.imageUrl,
+          agentImagePath: agentPhoto,
           backgroundImagePath: 'assets/images/match_bg.gif',
-          agentName: agent.name,
+          agentName: agentName,
+          agentId: agent.id,
+          reactionId: agent.reactionId,
           onContinue: () => Navigator.of(dialogContext).pop(),
           onStartChat: () => Navigator.of(dialogContext).pop(),
         );
@@ -192,14 +250,7 @@ class _OfferDetailScreenState extends State<OfferDetailScreen> {
         backgroundColor: backgroundColor,
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: primary,
-            size: 22,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Offer details',
           style: TextStyle(
@@ -469,9 +520,11 @@ class _InterestedAgentTile extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.62)
         : Colors.black.withValues(alpha: 0.58);
 
-    final imageUrl = ProfileService.resolveMediaUrl(agent.imageUrl) ??
-        agent.imageUrl;
-    final isPending = agent.status.toUpperCase() == 'PENDING';
+    final isPending = agent.isPendingInterest;
+    final imageUrl = isPending
+        ? ''
+        : (ProfileService.resolveMediaUrl(agent.imageUrl) ??
+            agent.imageUrl);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -498,7 +551,9 @@ class _InterestedAgentTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      agent.name,
+                      isPending
+                          ? AgentIdentityPrivacy.publicLabel(agent.name)
+                          : agent.name,
                       style: TextStyle(
                         color: primary,
                         fontSize: 16,
@@ -513,9 +568,9 @@ class _InterestedAgentTile extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        if (agent.city.isNotEmpty) ...[
+                    if (agent.city.isNotEmpty)
+                      Row(
+                        children: [
                           HugeIcon(
                             icon: HugeIcons.strokeRoundedLocation01,
                             color: secondary,
@@ -526,24 +581,8 @@ class _InterestedAgentTile extends StatelessWidget {
                             agent.city,
                             style: TextStyle(color: secondary, fontSize: 12),
                           ),
-                          const SizedBox(width: 10),
                         ],
-                        const HugeIcon(
-                          icon: HugeIcons.strokeRoundedStar,
-                          color: Color(0xFFF59E0B),
-                          size: 14,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          agent.rating.toStringAsFixed(1),
-                          style: TextStyle(
-                            color: secondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
                   ],
                 ),
               ),

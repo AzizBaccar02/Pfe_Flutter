@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -25,14 +26,7 @@ class AboutScreen extends StatelessWidget {
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: isDarkMode ? Colors.white : Colors.black,
-            size: 20,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         centerTitle: true,
         title: Text(
           'About',

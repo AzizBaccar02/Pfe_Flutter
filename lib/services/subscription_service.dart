@@ -14,6 +14,9 @@ class SubscriptionService {
   static const String _checkoutPath =
       '/api/subscriptions/create-checkout-session/';
   static const String _portalPath = '/api/subscriptions/create-portal-session/';
+  static const String _confirmCheckoutPath =
+      '/api/subscriptions/confirm-checkout-session/';
+  static const String _syncPath = '/api/subscriptions/sync/';
 
   static Future<List<SubscriptionPlanModel>> fetchPlans() async {
     final response = await _authorizedRequest(
@@ -67,7 +70,9 @@ class SubscriptionService {
     return MySubscriptionModel.fromJson(decoded);
   }
 
-  static Future<String> createCheckoutSession({required int planId}) async {
+  static Future<CheckoutSessionResult> createCheckoutSession({
+    required int planId,
+  }) async {
     final response = await _authorizedRequest(
       requestBuilder: (headers) {
         return http.post(
@@ -89,12 +94,80 @@ class SubscriptionService {
     }
 
     final checkoutUrl = decoded['checkoutUrl']?.toString().trim() ?? '';
+    final sessionId = decoded['sessionId']?.toString().trim() ?? '';
 
     if (checkoutUrl.isEmpty) {
       throw const SubscriptionException('Checkout URL was not returned.');
     }
 
-    return checkoutUrl;
+    return CheckoutSessionResult(
+      checkoutUrl: checkoutUrl,
+      sessionId: sessionId,
+    );
+  }
+
+  /// Pulls the latest paid subscription state from Stripe (fixes INCOMPLETE rows).
+  static Future<MySubscriptionModel> syncSubscription() async {
+    final response = await _authorizedRequest(
+      requestBuilder: (headers) {
+        return http.post(
+          AuthService.apiUri(_syncPath),
+          headers: headers,
+          body: jsonEncode({}),
+        );
+      },
+    );
+
+    final decoded = _decodeResponse(response);
+
+    if (response.statusCode != 200) {
+      throw SubscriptionException(_extractErrorMessage(decoded));
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const SubscriptionException(
+        'Invalid subscription sync response from server.',
+      );
+    }
+
+    return MySubscriptionModel.fromJson(decoded);
+  }
+
+  /// Activates subscription from Stripe after checkout (needed when webhooks
+  /// cannot reach localhost). Omit [sessionId] to use the stored checkout id.
+  static Future<MySubscriptionModel> confirmCheckoutSession({
+    String? sessionId,
+  }) async {
+    final body = <String, dynamic>{};
+    final trimmedSessionId = sessionId?.trim() ?? '';
+
+    if (trimmedSessionId.isNotEmpty) {
+      body['sessionId'] = trimmedSessionId;
+    }
+
+    final response = await _authorizedRequest(
+      requestBuilder: (headers) {
+        return http.post(
+          AuthService.apiUri(_confirmCheckoutPath),
+          headers: headers,
+          body: jsonEncode(body),
+        );
+      },
+    );
+
+    final decoded = _decodeResponse(response);
+
+    if (response.statusCode != 200) {
+      throw SubscriptionException(_extractErrorMessage(decoded));
+    }
+
+    if (decoded is! Map<String, dynamic>) {
+      throw const SubscriptionException(
+        'Invalid subscription confirmation response from server.',
+      );
+    }
+
+    return MySubscriptionModel.fromJson(decoded);
   }
 
   static Future<String> createPortalSession() async {
@@ -203,6 +276,16 @@ class SubscriptionService {
 
     return 'Something went wrong. Please try again.';
   }
+}
+
+class CheckoutSessionResult {
+  final String checkoutUrl;
+  final String sessionId;
+
+  const CheckoutSessionResult({
+    required this.checkoutUrl,
+    required this.sessionId,
+  });
 }
 
 class SubscriptionException implements Exception {

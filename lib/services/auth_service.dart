@@ -3,11 +3,19 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../conf/api_config.dart';
 import '../models/app_user_model.dart';
+import 'agent_offers_realtime.dart';
+import 'agent_reactions_realtime.dart';
+import 'app_realtime_coordinator.dart';
+import 'chat_realtime_hub.dart';
+import 'client_interaction_realtime.dart';
+import 'client_interaction_state_service.dart';
+import 'notification_realtime_hub.dart';
+import 'presence_service.dart';
 
 class AuthService {
   static const String _accessTokenKey = 'access_token';
@@ -17,29 +25,11 @@ class AuthService {
   static const String _completeProfilePromptPrefix =
       'seen_complete_profile_prompt_';
 
-  static String get _baseUrl {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8000';
-    }
+  static Uri _uri(String path) => ApiConfig.httpUri(path);
 
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'http://10.0.2.2:8000';
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        return 'http://127.0.0.1:8000';
-      default:
-        return 'http://127.0.0.1:8000';
-    }
-  }
+  static String get apiBaseUrl => ApiConfig.httpBaseUrl;
 
-  static Uri _uri(String path) => Uri.parse('$_baseUrl$path');
-
-  static String get apiBaseUrl => _baseUrl;
-
-  static Uri apiUri(String path) => _uri(path);
+  static Uri apiUri(String path) => ApiConfig.httpUri(path);
 
   static Future<SignUpResponse> signUp({
     required String username,
@@ -215,6 +205,29 @@ class AuthService {
     await prefs.setString(_refreshTokenKey, response.refreshToken);
     await prefs.setInt(_userIdKey, response.userId);
     await prefs.setString(_roleKey, response.role);
+
+    ChatRealtimeHub.resetForNewSession();
+    NotificationRealtimeHub.instance.resetForNewSession();
+    AppRealtimeCoordinator.instance.ensureStarted();
+
+    // Do not block login UI — home screens also call [PresenceService.activate].
+    unawaited(PresenceService.activate());
+  }
+
+  /// Stops realtime services, clears cached client state, then removes tokens.
+  static Future<void> logout() async {
+    ClientInteractionRealtime.instance.reset();
+    AgentOffersRealtime.instance.dispose();
+    AgentReactionsRealtime.instance.reset();
+    AppRealtimeCoordinator.instance.reset();
+    ClientInteractionStateService.reset();
+
+    await Future.wait([
+      NotificationRealtimeHub.instance.shutdown(),
+      PresenceService.shutdown(),
+    ]);
+
+    await clearLoginSession();
   }
 
   static Future<void> clearLoginSession() async {
@@ -243,6 +256,16 @@ class AuthService {
   static Future<String?> getStoredRole() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_roleKey);
+  }
+
+  static Future<bool> isClientRole() async {
+    final role = await getStoredRole();
+    return role?.trim().toUpperCase() == 'CLIENT';
+  }
+
+  static Future<bool> isAgentRole() async {
+    final role = await getStoredRole();
+    return role?.trim().toUpperCase() == 'AGENT';
   }
 
   static Future<bool> hasActiveSession() async {
@@ -308,12 +331,14 @@ class AuthService {
 
       throw AuthException(_extractErrorMessage(decoded));
     } on TimeoutException {
-      throw const AuthException(
-        'The request took too long. Please check your connection and try again.',
+      throw AuthException(
+        'Cannot reach the server at ${ApiConfig.httpBaseUrl}. '
+        'Start Django (e.g. runserver 0.0.0.0:8000) and check ApiConfig in lib/conf/api_config.dart.',
       );
     } on http.ClientException {
-      throw const AuthException(
-        'Unable to reach the server. Please make sure the backend is running.',
+      throw AuthException(
+        'Unable to reach the server at ${ApiConfig.httpBaseUrl}. '
+        'Make sure Django is running.',
       );
     } catch (e) {
       if (e is AuthException) rethrow;

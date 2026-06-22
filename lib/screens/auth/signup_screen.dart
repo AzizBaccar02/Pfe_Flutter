@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 
 import '../../conf/theme_provider.dart';
 import 'login_screen.dart';
 import 'widgets/auth_prompt.dart';
-import 'widgets/social_signup.dart';
 import 'widgets/signup_form.dart';
 
 class SignupScreen extends StatelessWidget {
@@ -26,15 +26,7 @@ class SignupScreen extends StatelessWidget {
         backgroundColor: isDarkMode ? Colors.black : Colors.white,
         foregroundColor: isDarkMode ? Colors.white : Colors.black,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: isDarkMode ? Colors.white : Colors.black,
-          ),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Sign Up',
           style: TextStyle(
@@ -63,8 +55,6 @@ class SignupScreen extends StatelessWidget {
 
               SignupForm(role: role),
 
-              const SizedBox(height: 24),
-              SocialSignup(isDarkMode: isDarkMode),
               const SizedBox(height: 24),
               AuthPrompt(
                 question: 'Already have an account?',

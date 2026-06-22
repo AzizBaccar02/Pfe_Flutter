@@ -4,35 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../conf/user_profile_provider.dart';
 import '../../../models/agent_profile_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../services/profile_service.dart';
 import '../../auth/agent/agent_complete_profile_flow_screen.dart';
 import '../../auth/role_selection_screen.dart';
-import '../../notifications/notification_center_screen.dart';
 import '../../settings/appearance_screen.dart';
 import '../../settings/help_support_screen.dart';
-import '../../settings/privacy_security_screen.dart';
-import '../../settings/settings_screen.dart';
 import '../../subscription/subscription_hub_screen.dart';
 import 'offers_drawer_item.dart';
 
 class AgentOffersDrawer extends StatefulWidget {
   final bool isDarkMode;
-  final VoidCallback onHomeTap;
-  final VoidCallback onOffersTap;
-  final VoidCallback onReactionsTap;
-  final VoidCallback onChatsTap;
 
   const AgentOffersDrawer({
     super.key,
     required this.isDarkMode,
-    required this.onHomeTap,
-    required this.onOffersTap,
-    required this.onReactionsTap,
-    required this.onChatsTap,
   });
 
   @override
@@ -52,14 +40,11 @@ class _AgentOffersDrawerState extends State<AgentOffersDrawer> {
 
   Future<void> _loadAgentProfile() async {
     try {
-      final AgentProfileModel profile =
-          await ProfileService.getAgentProfile();
-
+      final AgentProfileModel profile = await ProfileService.getAgentProfile();
       if (!mounted) return;
 
       final profileProvider = context.read<UserProfileProvider>();
       final remoteUrl = ProfileService.resolveMediaUrl(profile.photoUrl);
-
       if (remoteUrl != null && remoteUrl.isNotEmpty) {
         profileProvider.setRemoteProfileImageUrl(remoteUrl);
       } else {
@@ -67,15 +52,13 @@ class _AgentOffersDrawerState extends State<AgentOffersDrawer> {
       }
 
       setState(() {
-        _agentName = profile.fullName;
+        _agentName = profile.displayName;
         _agentEmail = profile.email.trim();
         _isLoadingProfile = false;
       });
     } catch (_) {
       if (!mounted) return;
-
       context.read<UserProfileProvider>().clearProfileImage();
-
       setState(() {
         _agentName = 'Agent';
         _agentEmail = '';
@@ -119,33 +102,16 @@ class _AgentOffersDrawerState extends State<AgentOffersDrawer> {
     return _emptyAvatar();
   }
 
-  void _closeDrawerAndRun(VoidCallback action) {
-    Navigator.pop(context);
-    action();
-  }
-
   Future<void> _openAccount() async {
     Navigator.pop(context);
-
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => const AgentCompleteProfileFlowScreen(),
       ),
     );
-
     if (!mounted) return;
     _loadAgentProfile();
-  }
-
-  void _openNotifications() {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const NotificationCenterScreen(),
-      ),
-    );
   }
 
   void _openAppearance() {
@@ -158,34 +124,12 @@ class _AgentOffersDrawerState extends State<AgentOffersDrawer> {
     );
   }
 
-  void _openPrivacySecurity() {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const PrivacySecurityScreen(),
-      ),
-    );
-  }
-
   void _openHelpSupport() {
     Navigator.pop(context);
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => const HelpSupportScreen(),
-      ),
-    );
-  }
-
-  void _openSettings() {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const SettingsScreen(
-          role: UserRoleType.agent,
-        ),
       ),
     );
   }
@@ -259,40 +203,26 @@ class _AgentOffersDrawerState extends State<AgentOffersDrawer> {
 
     if (shouldLogout != true || !context.mounted) return;
 
-    await AuthService.clearLoginSession();
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+
+    try {
+      await AuthService.logout().timeout(const Duration(seconds: 8));
+    } catch (_) {
+      await AuthService.clearLoginSession();
+    }
+
     if (!context.mounted) return;
     context.read<UserProfileProvider>().clearProfileImage();
 
     if (!context.mounted) return;
 
-    Navigator.pushAndRemoveUntil(
-      context,
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
       MaterialPageRoute(
         builder: (_) => const RoleSelectionScreen(),
       ),
       (route) => false,
-    );
-  }
-
-  Widget _sectionLabel(String text) {
-    final color = widget.isDarkMode
-        ? Colors.white.withValues(alpha: 0.42)
-        : Colors.black.withValues(alpha: 0.42);
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 18, 4, 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          text.toUpperCase(),
-          style: TextStyle(
-            color: color,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.8,
-          ),
-        ),
-      ),
     );
   }
 
@@ -306,8 +236,7 @@ class _AgentOffersDrawerState extends State<AgentOffersDrawer> {
     final secondaryTextColor = widget.isDarkMode
         ? Colors.white.withValues(alpha: 0.6)
         : Colors.black.withValues(alpha: 0.6);
-
-    final profileProvider = Provider.of<UserProfileProvider>(context);
+    final profileProvider = context.watch<UserProfileProvider>();
 
     return Drawer(
       backgroundColor: backgroundColor,
@@ -392,103 +321,61 @@ class _AgentOffersDrawerState extends State<AgentOffersDrawer> {
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
                   child: Column(
                     children: [
-                      _sectionLabel('Workspace'),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedUser,
-                        title: 'Account',
+                      OffersDrawerSection(
+                        label: 'Subscription',
                         isDarkMode: widget.isDarkMode,
-                        onTap: _openAccount,
+                        rows: [
+                          OffersDrawerRow(
+                            icon: HugeIcons.strokeRoundedWallet02,
+                            title: 'Subscription',
+                            onTap: _openSubscription,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 10),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedHome01,
-                        title: 'Home',
+                      OffersDrawerSection(
+                        label: 'Preferences',
                         isDarkMode: widget.isDarkMode,
-                        onTap: () => _closeDrawerAndRun(widget.onHomeTap),
+                        rows: [
+                          OffersDrawerRow(
+                            icon: HugeIcons.strokeRoundedDarkMode,
+                            title: 'Appearance',
+                            onTap: _openAppearance,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 10),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedBriefcase01,
-                        title: 'Browse offers',
+                      OffersDrawerSection(
+                        label: 'Support',
                         isDarkMode: widget.isDarkMode,
-                        onTap: () => _closeDrawerAndRun(widget.onOffersTap),
-                      ),
-                      const SizedBox(height: 10),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedFavourite,
-                        title: 'My reactions',
-                        isDarkMode: widget.isDarkMode,
-                        onTap: () => _closeDrawerAndRun(widget.onReactionsTap),
-                      ),
-                      const SizedBox(height: 10),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedMessage02,
-                        title: 'Chats',
-                        isDarkMode: widget.isDarkMode,
-                        onTap: () => _closeDrawerAndRun(widget.onChatsTap),
-                      ),
-                      _sectionLabel('Subscription'),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedWallet02,
-                        title: 'Subscription',
-                        isDarkMode: widget.isDarkMode,
-                        color: AppColors.accent,
-                        onTap: _openSubscription,
-                      ),
-                      _sectionLabel('Preferences'),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedNotification03,
-                        title: 'Notifications',
-                        isDarkMode: widget.isDarkMode,
-                        onTap: _openNotifications,
-                      ),
-                      const SizedBox(height: 10),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedDarkMode,
-                        title: 'Appearance',
-                        isDarkMode: widget.isDarkMode,
-                        onTap: _openAppearance,
-                      ),
-                      const SizedBox(height: 10),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedShield01,
-                        title: 'Privacy & Security',
-                        isDarkMode: widget.isDarkMode,
-                        onTap: _openPrivacySecurity,
-                      ),
-                      _sectionLabel('Support'),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedHelpCircle,
-                        title: 'Help & Support',
-                        isDarkMode: widget.isDarkMode,
-                        onTap: _openHelpSupport,
-                      ),
-                      const SizedBox(height: 10),
-                      OffersDrawerItem(
-                        icon: HugeIcons.strokeRoundedSettings01,
-                        title: 'Settings',
-                        isDarkMode: widget.isDarkMode,
-                        onTap: _openSettings,
+                        rows: [
+                          OffersDrawerRow(
+                            icon: HugeIcons.strokeRoundedHelpCircle,
+                            title: 'Help & Support',
+                            onTap: _openHelpSupport,
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 14),
-              OffersDrawerItem(
-                icon: HugeIcons.strokeRoundedLogout01,
-                title: 'Logout',
+              OffersDrawerSection(
                 isDarkMode: widget.isDarkMode,
-                color: Colors.redAccent,
-                onTap: () => _handleLogout(context),
+                rows: [
+                  OffersDrawerRow(
+                    icon: HugeIcons.strokeRoundedLogout01,
+                    title: 'Logout',
+                    isDestructive: true,
+                    onTap: () => _handleLogout(context),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
             ],
           ),
         ),

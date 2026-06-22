@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class SessionCardData {
@@ -93,13 +94,13 @@ class SessionCard extends StatelessWidget {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E).withOpacity(0.14),
+                          color: AppColors.accent.withOpacity(0.14),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: const Text(
                           'Current',
                           style: TextStyle(
-                            color: Color(0xFF22C55E),
+                            color: AppColors.accent,
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
                           ),

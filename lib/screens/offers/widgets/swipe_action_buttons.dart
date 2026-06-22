@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class SwipeActionButtons extends StatelessWidget {
@@ -37,7 +38,7 @@ class SwipeActionButtons extends StatelessWidget {
         _SwipeCircleIconButton(
           onTap: onLike,
           isDarkMode: isDarkMode,
-          backgroundColor: const Color(0xFF22C55E),
+          backgroundColor: AppColors.accent,
           elevation: 10,
           child: const HugeIcon(
             icon: HugeIcons.strokeRoundedFavourite,

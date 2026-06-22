@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
@@ -6,13 +7,12 @@ import '../../conf/theme_provider.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/primary_button.dart';
-import '../../widgets/social_button.dart';
+import '../offers/agent/agent_main_screen.dart';
 import '../offers/client/client_main_screen.dart';
 import 'complete_profile_prompt_screen.dart';
 import 'email_verification_screen.dart';
 import 'forgot_password_email_screen.dart';
 import 'widgets/auth_prompt.dart';
-import 'widgets/divider_with_text.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -50,7 +50,40 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
+  void _stopLoading() {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  void _goToHomeAfterLogin({
+    required String role,
+    required bool hasSeenPrompt,
+  }) {
+    if (!mounted) return;
+
+    final navigator = Navigator.of(context, rootNavigator: true);
+
+    final Widget destination;
+    if (!hasSeenPrompt) {
+      destination = CompleteProfilePromptScreen(role: role);
+    } else {
+      destination = role.toUpperCase() == 'CLIENT'
+          ? const ClientEntryScreen()
+          : const AgentEntryScreen();
+    }
+
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => destination),
+      (route) => false,
+    );
+  }
+
   Future<void> _handleLogin() async {
+    if (_isLoading) return;
+
     FocusScope.of(context).unfocus();
 
     if (!_formKey.currentState!.validate()) return;
@@ -71,37 +104,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Login successful!'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      if (!hasSeenPrompt) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CompleteProfilePromptScreen(
-              role: response.role,
-            ),
-          ),
-          (route) => false,
-        );
-        return;
-      }
-
-      final role = response.role.toUpperCase();
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (_) => role == 'CLIENT'
-              ? const ClientEntryScreen()
-              : const AgentEntryPlaceholderScreen(),
-        ),
-        (route) => false,
+      _stopLoading();
+      _goToHomeAfterLogin(
+        role: response.role,
+        hasSeenPrompt: hasSeenPrompt,
       );
     } on AuthException catch (e) {
       if (!mounted) return;
@@ -109,6 +115,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final message = e.message;
 
       if (message.toLowerCase().contains('verify your email first')) {
+        _stopLoading();
+
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -117,21 +125,18 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         );
-      } else {
-        setState(() {
-          _errorMessage = message;
-        });
+        return;
       }
+
+      setState(() {
+        _errorMessage = message;
+        _isLoading = false;
+      });
     } catch (_) {
       if (!mounted) return;
 
       setState(() {
         _errorMessage = 'Unable to login. Please try again.';
-      });
-    } finally {
-      if (!mounted) return;
-
-      setState(() {
         _isLoading = false;
       });
     }
@@ -161,13 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
         foregroundColor: primaryTextColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: Icon(
-            Icons.arrow_back,
-            color: primaryTextColor,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Log In',
           style: TextStyle(
@@ -269,36 +268,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
                 PrimaryButton(
                   text: _isLoading ? 'Logging in...' : 'Log In',
-                  onPressed: _isLoading ? () {} : _handleLogin,
-                  isDarkMode: isDarkMode,
-                ),
-                const SizedBox(height: 28),
-                DividerWithText(
-                  text: 'or',
-                  isDarkMode: isDarkMode,
-                ),
-                const SizedBox(height: 20),
-                SocialButton(
-                  label: 'Log in with Gmail',
-                  icon: const Icon(
-                    Icons.mail_outline_rounded,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-                  backgroundColor: const Color(0xFFFF4B3E),
-                  onTap: () {},
-                  isDarkMode: isDarkMode,
-                ),
-                const SizedBox(height: 14),
-                SocialButton(
-                  label: 'Log in with Facebook',
-                  icon: const Icon(
-                    Icons.facebook_rounded,
-                    size: 18,
-                    color: Colors.white,
-                  ),
-                  backgroundColor: const Color(0xFF1877F2),
-                  onTap: () {},
+                  onPressed: _isLoading ? null : () => _handleLogin(),
                   isDarkMode: isDarkMode,
                 ),
                 const SizedBox(height: 28),

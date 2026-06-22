@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/app_notification_model.dart';
 import '../models/offer_interaction_model.dart';
+import 'auth_service.dart';
 import 'interaction_service.dart';
 
 class NotificationEnrichmentService {
@@ -23,18 +24,47 @@ class NotificationEnrichmentService {
     AppNotificationModel notification,
   ) async {
     if (!_needsEnrichment(notification)) return notification;
+
+    if (notification.interactionId != null &&
+        notification.interactionId! > 0) {
+      try {
+        final agent = await InteractionService.fetchInterestedAgentByReaction(
+          reactionId: notification.interactionId!,
+          offerId: notification.offerId,
+          agentId: notification.agentId,
+        );
+        if (agent != null) {
+          return notification.copyWith(
+            type: AppNotificationType.agentLikedOffer,
+            tapAction: NotificationTapAction.reviewAgentInterest,
+            offerId: notification.offerId ?? agent.offerId,
+            agentId: notification.agentId ?? agent.id,
+            interactionId: agent.reactionId,
+            agentName: notification.agentName ?? agent.name,
+            offerTitle: notification.offerTitle ?? agent.offerTitle,
+          );
+        }
+      } catch (e) {
+        debugPrint('[ENRICH] fetchInterestedAgentByReaction: $e');
+      }
+    }
+
     final pending = await _fetchPending([notification]);
     return _enrichOne(notification, pending);
   }
 
   static bool _needsEnrichment(AppNotificationModel n) {
     if (!n.isAgentInterestNotification) return false;
-    return n.offerId == null || n.agentId == null || n.interactionId == null;
+    return n.offerId == null ||
+        n.agentId == null ||
+        (n.interactionId ?? 0) <= 0;
   }
 
   static Future<List<OfferInteractionModel>> _fetchPending(
     List<AppNotificationModel> notifications,
   ) async {
+    if (!await AuthService.isClientRole()) return const [];
+
     final results = <OfferInteractionModel>[];
 
     try {

@@ -1,16 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../models/client_offer_model.dart';
+import '../../../services/app_realtime_coordinator.dart';
+import '../../../services/client_interaction_realtime.dart';
 import '../../../services/offer_service.dart';
+import '../../../services/tab_auto_refresh.dart';
 import 'offer_detail_screen.dart';
 import '../widgets/my_offer_card.dart';
 
 class MyOffersScreen extends StatefulWidget {
-  const MyOffersScreen({super.key});
+  final bool isTabActive;
+  final int refreshToken;
+
+  const MyOffersScreen({
+    super.key,
+    this.isTabActive = true,
+    this.refreshToken = 0,
+  });
 
   @override
   State<MyOffersScreen> createState() => _MyOffersScreenState();
@@ -24,6 +36,8 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
   String? _errorMessage;
 
   List<ClientOfferModel> _offers = [];
+
+  late final TabAutoRefresh _autoRefresh;
 
   int get _openCount =>
       _offers.where((o) => o.status == OfferStatus.open).length;
@@ -57,7 +71,36 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
   @override
   void initState() {
     super.initState();
-    _loadOffers();
+    ClientInteractionRealtime.instance.ensureStarted();
+    _autoRefresh = TabAutoRefresh(
+      onRefresh: ({showLoader = true}) => _loadOffers(showLoader: showLoader),
+      isTabActive: () => widget.isTabActive,
+      pollInterval: const Duration(seconds: 15),
+    );
+    _autoRefresh.attach();
+    if (widget.isTabActive) {
+      _loadOffers();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoRefresh.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant MyOffersScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final refreshRequested = widget.refreshToken != oldWidget.refreshToken;
+    final becameActive = widget.isTabActive && !oldWidget.isTabActive;
+
+    if (refreshRequested) {
+      _loadOffers(showLoader: _offers.isEmpty);
+    } else if (becameActive) {
+      _autoRefresh.onTabBecameActive();
+    }
   }
 
   Future<void> _loadOffers({bool showLoader = true}) async {
@@ -69,7 +112,7 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
     }
 
     try {
-      final offers = await OfferService.fetchMyOffers();
+      final offers = await OfferService.fetchMyOffers(force: !showLoader);
 
       if (!mounted) return;
 
@@ -86,7 +129,7 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
         _errorMessage = 'Unable to load your offers. Please try again.';
       });
     } finally {
-      if (mounted && showLoader) {
+      if (mounted) {
         setState(() => _isLoading = false);
       }
     }
@@ -114,6 +157,8 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
             .toList();
       });
 
+      OfferService.invalidateMyOffersCache();
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'offer_updated');
       _showSnackBar('Offer updated successfully');
     } on OfferException catch (e) {
       if (!mounted) return;
@@ -182,6 +227,8 @@ class _MyOffersScreenState extends State<MyOffersScreen> {
         _offers = _offers.where((item) => item.id != offer.id).toList();
       });
 
+      OfferService.invalidateMyOffersCache();
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'offer_deleted');
       _showSnackBar('Offer deleted');
     } on OfferException catch (e) {
       if (!mounted) return;

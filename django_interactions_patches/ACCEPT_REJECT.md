@@ -1,6 +1,20 @@
 # Accept / Decline agent interest (fix HTTP 404)
 
-Flutter calls these endpoints when the client taps **Accept agent** or **Decline**:
+## Interested tab swipe (primary)
+
+The **Interested** swipe deck calls:
+
+```
+POST /api/interactions/reactions/<reaction_id>/respond/
+{ "accept": true }   → match + notify agent (accepted)
+{ "accept": false }  → notify agent (declined)
+```
+
+Copy **`reaction_respond_view.py`** and register that URL. Without it, swipe actions do not notify the agent.
+
+---
+
+Flutter may also call these endpoints when the client taps **Accept agent** or **Decline** elsewhere:
 
 ```
 POST /api/interactions/<interaction_id>/accept/

@@ -52,21 +52,9 @@ class ChatUserSummary {
     }
 
     String pickPhoto() {
-      const keys = [
-        'photo',
-        'photoUrl',
-        'photo_url',
-        'avatar',
-        'profilePhoto',
-        'profile_photo',
-        'image',
-        'picture',
-      ];
       for (final map in _userJsonMapLayers(json)) {
-        for (final key in keys) {
-          final s = map[key]?.toString().trim() ?? '';
-          if (s.isNotEmpty) return s;
-        }
+        final photo = _pickPhotoFromMap(map);
+        if (photo.isNotEmpty) return photo;
       }
       return '';
     }
@@ -235,6 +223,58 @@ int _peerRefFromOther(ChatUserSummary? otherUser) {
   return otherUser.id;
 }
 
+String _pickPhotoFromMap(Map<String, dynamic> map) {
+  const keys = [
+    'photo',
+    'photoUrl',
+    'photo_url',
+    'avatar',
+    'profilePhoto',
+    'profile_photo',
+    'profileImage',
+    'profile_image',
+    'image',
+    'picture',
+    'pictureUrl',
+    'picture_url',
+  ];
+
+  for (final key in keys) {
+    final value = map[key];
+    if (value is String) {
+      final s = value.trim();
+      if (s.isNotEmpty) return s;
+    }
+    if (value is Map) {
+      final nested = Map<String, dynamic>.from(value);
+      for (final nestedKey in ['url', 'photo', 'photo_url', 'photoUrl', 'path']) {
+        final s = nested[nestedKey]?.toString().trim() ?? '';
+        if (s.isNotEmpty) return s;
+      }
+    }
+  }
+
+  return '';
+}
+
+String _readFlatPeerPhoto(Map<String, dynamic> json) {
+  const keys = [
+    'peerPhoto',
+    'peer_photo',
+    'peerPhotoUrl',
+    'peer_photo_url',
+    'counterpartPhoto',
+    'counterpart_photo',
+    'otherUserPhoto',
+    'other_user_photo',
+  ];
+  for (final k in keys) {
+    final s = json[k]?.toString().trim() ?? '';
+    if (s.isNotEmpty) return s;
+  }
+  return '';
+}
+
 String _readFlatPeerPhone(Map<String, dynamic> json) {
   const keys = [
     'peerPhone',
@@ -344,8 +384,13 @@ class ChatLastMessageSummary {
       id: _parseInt(json['id']) ?? 0,
       content: json['content']?.toString() ?? '',
       senderId: _parseInt(json['senderId']) ?? 0,
-      isRead: _parseBool(json['isRead']) ?? false,
-      sentAt: _parseDate(json['sentAt']),
+      isRead: _parseBool(json['isRead']) ??
+          _parseBool(json['is_read']) ??
+          _parseBool(json['read']) ??
+          _parseBool(json['read_by_peer']) ??
+          _parseBool(json['readByPeer']) ??
+          false,
+      sentAt: _parseDate(json['sentAt']) ?? _parseDate(json['sent_at']),
     );
   }
 }
@@ -362,6 +407,8 @@ class ChatConversationSummaryModel {
   final int unreadCount;
   /// Phone at chat root (some APIs expose it here instead of nested user).
   final String flatPeerPhone;
+  /// Photo at chat root when nested user blobs omit it.
+  final String flatPeerPhoto;
 
   const ChatConversationSummaryModel({
     required this.id,
@@ -374,6 +421,7 @@ class ChatConversationSummaryModel {
     required this.lastMessage,
     required this.unreadCount,
     required this.flatPeerPhone,
+    this.flatPeerPhoto = '',
   });
 
   factory ChatConversationSummaryModel.fromJson(Map<String, dynamic> json) {
@@ -415,6 +463,7 @@ class ChatConversationSummaryModel {
           _parseInt(json['unread_count']) ??
           0,
       flatPeerPhone: _readFlatPeerPhone(json),
+      flatPeerPhoto: _readFlatPeerPhoto(json),
     );
   }
 
@@ -596,10 +645,84 @@ class ChatConversationSummaryModel {
 
   String get peerPhone => resolvePeerPhone();
 
+  /// Counterparty for [viewerUserId] (excludes the signed-in user when known).
+  ChatUserSummary? resolvePeerUserForViewer(
+    int viewerUserId, {
+    String viewerRole = '',
+  }) {
+    final role = viewerRole.toUpperCase();
+
+    if (role == 'AGENT') {
+      final c = client;
+      if (c != null && !_chatPersonMatches(c, viewerUserId)) return c;
+    } else if (role == 'CLIENT') {
+      final a = agent;
+      if (a != null && !_chatPersonMatches(a, viewerUserId)) return a;
+    }
+
+    if (viewerUserId > 0) {
+      if (otherUser != null && !_chatPersonMatches(otherUser, viewerUserId)) {
+        return otherUser;
+      }
+
+      final c = client;
+      final a = agent;
+
+      if (c != null && _chatPersonMatches(c, viewerUserId) && a != null) {
+        if (!_chatPersonMatches(a, viewerUserId)) return a;
+      }
+      if (a != null && _chatPersonMatches(a, viewerUserId) && c != null) {
+        if (!_chatPersonMatches(c, viewerUserId)) return c;
+      }
+
+      if (c != null && !_chatPersonMatches(c, viewerUserId)) return c;
+      if (a != null && !_chatPersonMatches(a, viewerUserId)) return a;
+    }
+
+    if (otherUser != null) return otherUser;
+    return agent ?? client;
+  }
+
+  String peerDisplayInitialsForViewer(
+    int viewerUserId, {
+    String viewerRole = '',
+  }) {
+    return resolvePeerUserForViewer(
+          viewerUserId,
+          viewerRole: viewerRole,
+        )?.initials ??
+        displayInitials;
+  }
+
+  String _photoFromUser(ChatUserSummary? user) => user?.photoUrl.trim() ?? '';
+
   /// Profile photo path/URL for the peer; same fallback rules as [resolvePeerPhone].
-  String resolvePeerPhotoUrl({int viewerUserId = 0}) {
-    final fromOther = otherUser?.photoUrl.trim() ?? '';
-    if (fromOther.isNotEmpty) return fromOther;
+  String resolvePeerPhotoUrl({
+    int viewerUserId = 0,
+    String viewerRole = '',
+  }) {
+    final flat = flatPeerPhoto.trim();
+    if (flat.isNotEmpty) return flat;
+
+    final role = viewerRole.toUpperCase();
+    if (role == 'AGENT') {
+      final fromClient = _photoFromUser(client);
+      if (fromClient.isNotEmpty && !_chatPersonMatches(client, viewerUserId)) {
+        return fromClient;
+      }
+    } else if (role == 'CLIENT') {
+      final fromAgent = _photoFromUser(agent);
+      if (fromAgent.isNotEmpty && !_chatPersonMatches(agent, viewerUserId)) {
+        return fromAgent;
+      }
+    }
+
+    final peer = resolvePeerUserForViewer(
+      viewerUserId,
+      viewerRole: viewerRole,
+    );
+    final fromPeer = _photoFromUser(peer);
+    if (fromPeer.isNotEmpty) return fromPeer;
 
     final ref = _peerRefFromOther(otherUser);
     if (ref != 0) {
@@ -638,6 +761,12 @@ class ChatConversationSummaryModel {
   }
 
   String get peerPhotoUrl => resolvePeerPhotoUrl();
+
+  int get linkedOfferId =>
+      offer?.id ?? offreReaction?.offreId ?? 0;
+
+  int get linkedAgentId =>
+      offreReaction?.agentId ?? agent?.id ?? otherUser?.id ?? 0;
 
   String get offerTitle {
     final title = offer?.title.trim() ?? '';

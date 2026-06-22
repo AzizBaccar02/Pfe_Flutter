@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../models/app_notification_model.dart';
 
 class NotificationTile extends StatelessWidget {
@@ -18,7 +18,7 @@ class NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
     final secondaryTextColor = isDarkMode
@@ -144,6 +144,8 @@ class NotificationTile extends StatelessWidget {
         return HugeIcons.strokeRoundedCancel01;
       case AppNotificationType.offer:
         return HugeIcons.strokeRoundedWork;
+      case AppNotificationType.agentRated:
+        return HugeIcons.strokeRoundedStar;
       case AppNotificationType.system:
         return HugeIcons.strokeRoundedNotification03;
     }

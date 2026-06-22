@@ -1,14 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:provider/provider.dart';
 
-import '../../../conf/app_colors.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../models/agent_my_reaction_model.dart';
+import '../../../services/agent_reactions_realtime.dart';
 import '../../../services/interaction_service.dart';
+import '../../../services/tab_auto_refresh.dart';
 import 'agent_my_reaction_detail_screen.dart';
 
 class AgentMyReactionsScreen extends StatefulWidget {
-  const AgentMyReactionsScreen({super.key});
+  final bool isTabActive;
+
+  const AgentMyReactionsScreen({
+    super.key,
+    this.isTabActive = true,
+  });
 
   @override
   State<AgentMyReactionsScreen> createState() => _AgentMyReactionsScreenState();
@@ -27,10 +36,36 @@ class _AgentMyReactionsScreenState extends State<AgentMyReactionsScreen> {
   String? _errorMessage;
   List<AgentMyReactionModel> _items = [];
 
+  late final TabAutoRefresh _autoRefresh;
+
   @override
   void initState() {
     super.initState();
-    _load();
+    AgentReactionsRealtime.instance.ensureStarted();
+    _autoRefresh = TabAutoRefresh(
+      onRefresh: ({showLoader = true}) => _load(showLoader: showLoader),
+      isTabActive: () => widget.isTabActive,
+      pollInterval: const Duration(seconds: 12),
+    );
+    _autoRefresh.attach();
+    if (widget.isTabActive) {
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoRefresh.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant AgentMyReactionsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.isTabActive && !oldWidget.isTabActive) {
+      _autoRefresh.onTabBecameActive();
+    }
   }
 
   Future<void> _load({bool showLoader = true}) async {
@@ -49,7 +84,7 @@ class _AgentMyReactionsScreenState extends State<AgentMyReactionsScreen> {
         _items = list;
         _errorMessage = null;
       });
-    } on InteractionException catch (e) {
+    } on InteractionServiceException catch (e) {
       if (!mounted) return;
 
       setState(() {
@@ -62,7 +97,7 @@ class _AgentMyReactionsScreenState extends State<AgentMyReactionsScreen> {
         _errorMessage = 'Unable to load your reactions. Please try again.';
       });
     } finally {
-      if (mounted && showLoader) {
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
@@ -93,7 +128,7 @@ class _AgentMyReactionsScreenState extends State<AgentMyReactionsScreen> {
   Color _statusAccent(AgentMyReactionModel r) {
     if (!r.react) return const Color(0xFFEF4444);
     if (r.isPending) return AppColors.accent;
-    if (r.isAccepted) return const Color(0xFF22C55E);
+    if (r.isAccepted) return AppColors.accent;
     return const Color(0xFFEF4444);
   }
 

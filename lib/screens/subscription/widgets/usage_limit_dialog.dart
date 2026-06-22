@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 
 import '../subscription_hub_screen.dart';
 
@@ -9,7 +10,11 @@ class UsageLimitDialog {
     return lower.contains('free tries') ||
         lower.contains('no remaining subscription') ||
         lower.contains('subscription has expired') ||
+        lower.contains('subscription is not active') ||
+        lower.contains('subscription has not started') ||
+        lower.contains('subscription usage limit') ||
         lower.contains('subscribe to continue') ||
+        lower.contains('renew to continue') ||
         lower.contains('renew your subscription');
   }
 
@@ -24,7 +29,7 @@ class UsageLimitDialog {
     final secondary = isDarkMode
         ? Colors.white.withValues(alpha: 0.65)
         : Colors.black.withValues(alpha: 0.6);
-    const accent = Color(0xFF6366F1);
+    const accent = AppColors.accent;
 
     final actionLabel = isAgent ? 'offer reactions' : 'offer posts';
     final defaultMessage =

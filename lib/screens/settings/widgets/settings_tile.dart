@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
 
-import '../../../conf/app_colors.dart';
 
 class SettingsTile extends StatelessWidget {
   final bool isDarkMode;

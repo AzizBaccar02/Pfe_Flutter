@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import '../../../conf/theme_provider.dart';
 import '../../../conf/user_profile_provider.dart';
 import '../../../models/client_profile_model.dart';
 import '../../../services/auth_service.dart';
+import '../../../services/app_realtime_coordinator.dart';
 import '../../../services/profile_service.dart';
 import '../../../widgets/custom_text_field.dart';
 import '../../../widgets/phone_text_field.dart';
@@ -44,6 +46,7 @@ class _ClientCompleteProfileFlowScreenState
   bool _isInitializing = true;
   bool _isSubmitting = false;
   String? _screenError;
+  String? _remoteProfileImageUrl;
   bool _didInitLocalImage = false;
 
   @override
@@ -71,6 +74,14 @@ class _ClientCompleteProfileFlowScreenState
 
       if (!mounted) return;
 
+      final profileProvider = context.read<UserProfileProvider>();
+      final localPath = profileProvider.localProfileImagePath;
+      final remoteUrl = ProfileService.resolveMediaUrl(data.photoUrl);
+
+      if (remoteUrl != null && remoteUrl.isNotEmpty) {
+        profileProvider.setRemoteProfileImageUrl(remoteUrl);
+      }
+
       setState(() {
         firstNameController.text = data.firstName;
         lastNameController.text = data.lastName;
@@ -78,6 +89,10 @@ class _ClientCompleteProfileFlowScreenState
         addressController.text = data.address;
         postalCodeController.text = data.postalCode;
         selectedCity = data.city.isEmpty ? null : data.city;
+        _remoteProfileImageUrl = remoteUrl;
+        if (localPath != null && localPath.isNotEmpty) {
+          selectedProfileImage = XFile(localPath);
+        }
         _screenError = null;
       });
     } on ProfileException catch (e) {
@@ -184,6 +199,8 @@ class _ClientCompleteProfileFlowScreenState
         );
       }
 
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'client_profile_step');
+
       if (!mounted) return;
 
       setState(() {
@@ -220,6 +237,7 @@ class _ClientCompleteProfileFlowScreenState
 
   Future<void> _handleFinish() async {
     await AuthService.markCompleteProfilePromptSeen();
+    AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'client_profile_done');
 
     if (!mounted) return;
 
@@ -332,13 +350,28 @@ class _ClientCompleteProfileFlowScreenState
       child: Column(
         children: [
           ProfilePhotoPicker(
+            key: ValueKey(
+              '${selectedProfileImage?.path ?? ''}|${_remoteProfileImageUrl ?? ''}',
+            ),
             isDarkMode: isDarkMode,
             initialImage: selectedProfileImage,
+            remoteImageUrl: selectedProfileImage == null
+                ? _remoteProfileImageUrl
+                : null,
             onImageChanged: (image) {
               setState(() {
                 selectedProfileImage = image;
+                if (image != null) {
+                  _remoteProfileImageUrl = null;
+                }
               });
-              context.read<UserProfileProvider>().setLocalProfileImagePath(image?.path);
+              if (image == null) {
+                context.read<UserProfileProvider>().clearProfileImage();
+              } else {
+                context
+                    .read<UserProfileProvider>()
+                    .setLocalProfileImagePath(image.path);
+              }
             },
           ),
           const SizedBox(height: 18),
@@ -601,14 +634,7 @@ class _ClientCompleteProfileFlowScreenState
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: _goBack,
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: primaryTextColor.withOpacity(0.78),
-            size: 18,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode, onPressed: _goBack),
         title: Text(
           'Complete Profile',
           style: TextStyle(

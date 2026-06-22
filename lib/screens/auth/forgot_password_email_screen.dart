@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -95,6 +96,7 @@ class _ForgotPasswordEmailScreenState extends State<ForgotPasswordEmailScreen> {
         backgroundColor: isDarkMode ? Colors.black : Colors.white,
         foregroundColor: isDarkMode ? Colors.white : Colors.black,
         elevation: 0,
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Forgot Password',
           style: TextStyle(
@@ -104,9 +106,16 @@ class _ForgotPasswordEmailScreenState extends State<ForgotPasswordEmailScreen> {
           ),
         ),
       ),
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            24 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Form(
             key: _formKey,
             child: Column(

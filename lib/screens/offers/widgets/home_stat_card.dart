@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-
-import '../../../conf/app_colors.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
+
+import '../client/widgets/client_home_theme.dart';
 
 class HomeStatCard extends StatelessWidget {
   final bool isDarkMode;
@@ -19,74 +20,65 @@ class HomeStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accent = AppColors.accent;
-
-    final backgroundColor =
-        isDarkMode ? const Color(0xFF141414) : const Color(0xFFF8F8F8);
-
-    final borderColor = isDarkMode
-        ? accent.withOpacity(0.10)
-        : accent.withOpacity(0.16);
-
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.58)
-        : Colors.black.withOpacity(0.56);
-
-    final neutralIconColor = isDarkMode
-        ? Colors.white.withOpacity(0.78)
-        : Colors.black.withOpacity(0.78);
+    final primaryText = ClientHomeTheme.primaryText(isDarkMode);
+    final secondaryText = ClientHomeTheme.secondaryText(isDarkMode);
+    final accent = ClientHomeTheme.accent(isDarkMode);
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDarkMode ? 0.16 : 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        color: ClientHomeTheme.cardBackground(isDarkMode),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ClientHomeTheme.cardBorder(isDarkMode)),
+        boxShadow: ClientHomeTheme.cardShadow(isDarkMode),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-              color: accent.withOpacity(isDarkMode ? 0.10 : 0.14),
-              borderRadius: BorderRadius.circular(14),
+              color: isDarkMode
+                  ? AppColors.accent.withValues(alpha: 0.12)
+                  : AppColors.accentSurface,
+              borderRadius: BorderRadius.circular(11),
             ),
             child: Center(
               child: HugeIcon(
                 icon: icon,
-                color: neutralIconColor,
-                size: 18,
+                color: accent,
+                size: 17,
               ),
             ),
           ),
-          const SizedBox(height: 18),
-          Text(
-            value,
-            style: TextStyle(
-              color: primaryTextColor,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              height: 1,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: TextStyle(
-              color: secondaryTextColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              height: 1.4,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: secondaryText,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: primaryText,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                    height: 1.1,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

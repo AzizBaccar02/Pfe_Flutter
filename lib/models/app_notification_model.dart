@@ -1,11 +1,14 @@
 // lib/models/app_notification_model.dart
 
+import '../utils/agent_identity_privacy.dart';
+
 enum AppNotificationType {
   message,
   match,
   offer,
   agentLikedOffer,
   clientRejected,
+  agentRated,
   system,
 }
 
@@ -35,6 +38,8 @@ class AppNotificationModel {
   final String? clientName;
   final String? offerTitle;
   final String? avatarUrl;
+  final int? ratingStars;
+  final String? ratingComment;
 
   const AppNotificationModel({
     required this.id,
@@ -54,20 +59,34 @@ class AppNotificationModel {
     this.clientName,
     this.offerTitle,
     this.avatarUrl,
+    this.ratingStars,
+    this.ratingComment,
   });
 
   bool get isActionable => tapAction != NotificationTapAction.none;
 
+  bool get isAgentRatingNotification => type == AppNotificationType.agentRated;
+
   bool get isAgentInterestNotification =>
       tapAction == NotificationTapAction.reviewAgentInterest ||
       type == AppNotificationType.agentLikedOffer;
+
+  bool get isClientMatchNotification =>
+      tapAction == NotificationTapAction.agentMatchAccepted ||
+      type == AppNotificationType.match;
 
   bool get canRespondInline =>
       isAgentInterestNotification && offerId != null && agentId != null;
 
   String get actorDisplayName {
     if (isAgentInterestNotification) {
-      return resolvedAgentName ?? 'Someone';
+      return AgentIdentityPrivacy.publicLabel(resolvedAgentName);
+    }
+    if (isAgentRatingNotification) {
+      if (clientName?.trim().isNotEmpty == true) return clientName!.trim();
+      final fromTitle = _parseNameBeforeVerb(title);
+      if (_isUsablePersonName(fromTitle)) return fromTitle!;
+      return 'A client';
     }
     if (clientName?.trim().isNotEmpty == true) return clientName!;
     return resolvedAgentName ?? 'Someone';
@@ -86,9 +105,47 @@ class AppNotificationModel {
     return null;
   }
 
+  String inboxActionLabel({String? reactionStatus}) {
+    if (isAgentInterestNotification) {
+      final offer = resolvedOfferTitle;
+      final normalized = reactionStatus?.trim().toUpperCase() ?? '';
+
+      if (normalized == 'ACCEPTED') {
+        if (offer != null && offer.isNotEmpty) {
+          return 'is your matched agent on "$offer".';
+        }
+        return 'is your matched agent.';
+      }
+
+      if (normalized == 'REJECTED') {
+        if (offer != null && offer.isNotEmpty) {
+          return 'was declined for "$offer".';
+        }
+        return 'was declined for your offer.';
+      }
+
+      if (offer != null && offer.isNotEmpty) {
+        return 'liked your offer "$offer".';
+      }
+      return 'liked your offer.';
+    }
+
+    if (isAgentRatingNotification) {
+      final offer = resolvedOfferTitle;
+      final stars = ratingStars ?? 0;
+      final starLabel = stars > 0 ? '$stars★' : 'a rating';
+      if (offer != null && offer.isNotEmpty) {
+        return 'left you $starLabel for "$offer".';
+      }
+      return 'left you $starLabel.';
+    }
+
+    return actionLabel;
+  }
+
   String get actionLabel {
     if (isAgentInterestNotification) {
-      final offer = _resolvedOfferTitle;
+      final offer = resolvedOfferTitle;
       if (offer != null && offer.isNotEmpty) {
         return 'liked your offer "$offer".';
       }
@@ -114,12 +171,21 @@ class AppNotificationModel {
         return body.trim().isNotEmpty ? body.trim() : 'updated an offer.';
       case AppNotificationType.agentLikedOffer:
         return 'liked your offer.';
+      case AppNotificationType.agentRated:
+        final stars = ratingStars ?? 0;
+        final starLabel = stars > 0 ? '$stars★' : 'a new rating';
+        final offer = offerTitle?.trim();
+        if (offer != null && offer.isNotEmpty) {
+          return 'rated you $starLabel for "$offer".';
+        }
+        return 'rated you $starLabel.';
       case AppNotificationType.system:
         return body.trim().isNotEmpty ? body.trim() : title.trim();
     }
   }
 
-  String? get _resolvedOfferTitle {
+  /// Offer title from payload or parsed from notification text.
+  String? get resolvedOfferTitle {
     final fromField = offerTitle?.trim();
     if (fromField != null && fromField.isNotEmpty) return fromField;
     return _parseOfferFromBody(body) ?? _parseOfferFromBody(title);
@@ -182,6 +248,10 @@ class AppNotificationModel {
   }
 
   String get avatarInitials {
+    if (isAgentInterestNotification) {
+      return AgentIdentityPrivacy.initials(resolvedAgentName);
+    }
+
     final parts = actorDisplayName
         .split(RegExp(r'\s+'))
         .where((p) => p.isNotEmpty)
@@ -198,13 +268,18 @@ class AppNotificationModel {
     final agentId       = _pi(data['agent_id'])       ?? _pi(data['agentId']);
     final clientId      = _pi(data['client_id'])      ?? _pi(data['clientId']);
     final chatId        = _pi(data['chat_id'])        ?? _pi(data['chatId']);
-    final interactionId = _pi(data['interaction_id']) ?? _pi(data['interactionId']);
+    final interactionId = _pi(data['interaction_id']) ??
+        _pi(data['interactionId']) ??
+        _pi(data['reaction_id']) ??
+        _pi(data['reactionId']);
     final agentName     = _str(data['agent_name'])    ?? _str(data['agentName']);
     final agentEmail    = _str(data['agent_email'])   ?? _str(data['agentEmail']);
     final clientName    = _str(data['client_name'])   ?? _str(data['clientName']);
     final offerTitle    = _str(data['offer_title'])   ?? _str(data['offerTitle']);
     final avatarUrl     = _str(data['avatar_url'])    ?? _str(data['avatarUrl'])
                        ?? _str(data['agent_photo'])   ?? _str(data['client_photo']);
+    final ratingStars   = _pi(data['stars']) ?? _pi(data['rating_stars']);
+    final ratingComment = _str(data['comment']) ?? _str(data['rating_comment']);
 
     final action    = _str(data['action'])?.toLowerCase() ?? '';
     final type      = _resolveType(json['type'], action);
@@ -228,6 +303,8 @@ class AppNotificationModel {
       clientName:     clientName,
       offerTitle:     offerTitle,
       avatarUrl:      avatarUrl,
+      ratingStars:    ratingStars,
+      ratingComment:  ratingComment,
     );
   }
 
@@ -249,6 +326,8 @@ class AppNotificationModel {
     String? clientName,
     String? offerTitle,
     String? avatarUrl,
+    int? ratingStars,
+    String? ratingComment,
   }) {
     return AppNotificationModel(
       id:             id            ?? this.id,
@@ -268,6 +347,8 @@ class AppNotificationModel {
       clientName:     clientName    ?? this.clientName,
       offerTitle:     offerTitle    ?? this.offerTitle,
       avatarUrl:      avatarUrl     ?? this.avatarUrl,
+      ratingStars:    ratingStars   ?? this.ratingStars,
+      ratingComment:  ratingComment ?? this.ratingComment,
     );
   }
 }
@@ -319,6 +400,9 @@ AppNotificationType _resolveType(dynamic rawType, String action) {
       return AppNotificationType.clientRejected;
     case 'open_chat':
       return AppNotificationType.message;
+    case 'agent_received_rating':
+    case 'client_rated_agent':
+      return AppNotificationType.agentRated;
   }
   switch (rawType?.toString().trim().toUpperCase() ?? '') {
     case 'NEW_MESSAGE':
@@ -334,6 +418,10 @@ AppNotificationType _resolveType(dynamic rawType, String action) {
     case 'PROPOSAL_STATUS':
     case 'OFFER':
       return AppNotificationType.offer;
+    case 'AGENT_RATED':
+    case 'AGENT_RATING':
+    case 'CLIENT_RATED_AGENT':
+      return AppNotificationType.agentRated;
     default:
       return AppNotificationType.system;
   }
@@ -352,6 +440,9 @@ NotificationTapAction _resolveTapAction(String action, AppNotificationType type)
       return NotificationTapAction.agentMatchRejected;
     case 'open_chat':
       return NotificationTapAction.openChat;
+    case 'agent_received_rating':
+    case 'client_rated_agent':
+      return NotificationTapAction.none;
   }
   switch (type) {
     case AppNotificationType.agentLikedOffer:
@@ -360,6 +451,8 @@ NotificationTapAction _resolveTapAction(String action, AppNotificationType type)
       return NotificationTapAction.agentMatchAccepted;
     case AppNotificationType.clientRejected:
       return NotificationTapAction.agentMatchRejected;
+    case AppNotificationType.agentRated:
+      return NotificationTapAction.none;
     default:
       return NotificationTapAction.none;
   }

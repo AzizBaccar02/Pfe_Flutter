@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../conf/theme_provider.dart';
 import '../../../conf/user_profile_provider.dart';
 import '../../../models/client_profile_model.dart';
+import '../../../services/app_realtime_coordinator.dart';
 import '../../../services/profile_service.dart';
 import '../../../widgets/custom_text_field.dart';
 import '../../../widgets/phone_text_field.dart';
@@ -189,6 +191,8 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         _remoteProfileImageUrl = remoteUrl;
       });
 
+      AppRealtimeCoordinator.instance.notifyRefresh(debugLabel: 'client_profile');
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Client profile saved successfully'),
@@ -232,32 +236,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         _isSaving = false;
       });
     }
-  }
-
-  Widget _buildRemotePhotoNotice(bool isDarkMode) {
-    if (_remoteProfileImageUrl == null ||
-        _remoteProfileImageUrl!.trim().isEmpty ||
-        selectedProfileImage != null) {
-      return const SizedBox.shrink();
-    }
-
-    final textColor = isDarkMode
-        ? Colors.white.withValues(alpha: 0.62)
-        : Colors.black.withValues(alpha: 0.62);
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Text(
-        'Your current profile photo is saved. Choose a new image only if you want to replace it.',
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 12,
-          height: 1.4,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
   }
 
   Widget _buildLoadingState(bool isDarkMode) {
@@ -346,9 +324,14 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
             ),
             const SizedBox(height: 18),
             ProfilePhotoPicker(
-              key: ValueKey(selectedProfileImage?.path ?? 'client-photo'),
+              key: ValueKey(
+                '${selectedProfileImage?.path ?? ''}|${_remoteProfileImageUrl ?? ''}',
+              ),
               isDarkMode: isDarkMode,
               initialImage: selectedProfileImage,
+              remoteImageUrl: selectedProfileImage == null
+                  ? _remoteProfileImageUrl
+                  : null,
               onImageChanged: (image) {
                 setState(() {
                   selectedProfileImage = image;
@@ -366,7 +349,6 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
                 }
               },
             ),
-            _buildRemotePhotoNotice(isDarkMode),
             const SizedBox(height: 18),
             if (_screenError != null)
               Container(
@@ -467,16 +449,7 @@ class _ClientProfileScreenState extends State<ClientProfileScreen> {
         backgroundColor: backgroundColor,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: HugeIcon(
-            icon: HugeIcons.strokeRoundedArrowLeft01,
-            color: isDarkMode
-                ? Colors.white.withValues(alpha: 0.7)
-                : Colors.black.withValues(alpha: 0.7),
-            size: 18,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Client Profile',
           style: TextStyle(

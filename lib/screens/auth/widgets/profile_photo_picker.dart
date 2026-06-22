@@ -8,12 +8,15 @@ class ProfilePhotoPicker extends StatefulWidget {
   final bool isDarkMode;
   final ValueChanged<XFile?> onImageChanged;
   final XFile? initialImage;
+  /// Existing photo from the server when no new local file is selected.
+  final String? remoteImageUrl;
 
   const ProfilePhotoPicker({
     super.key,
     required this.isDarkMode,
     required this.onImageChanged,
     this.initialImage,
+    this.remoteImageUrl,
   });
 
   @override
@@ -28,6 +31,20 @@ class _ProfilePhotoPickerState extends State<ProfilePhotoPicker> {
   void initState() {
     super.initState();
     _selectedImage = widget.initialImage;
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfilePhotoPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialImage?.path != oldWidget.initialImage?.path) {
+      _selectedImage = widget.initialImage;
+    }
+  }
+
+  bool get _hasPhoto {
+    if (_selectedImage != null) return true;
+    final remote = widget.remoteImageUrl?.trim();
+    return remote != null && remote.isNotEmpty;
   }
 
   Future<void> _pickFromGallery() async {
@@ -172,22 +189,7 @@ class _ProfilePhotoPickerState extends State<ProfilePhotoPicker> {
                       shape: BoxShape.circle,
                       color: innerColor,
                     ),
-                    child: ClipOval(
-                      child: _selectedImage != null
-                          ? Image.file(
-                              File(_selectedImage!.path),
-                              fit: BoxFit.cover,
-                            )
-                          : Center(
-                              child: HugeIcon(
-                                icon: HugeIcons.strokeRoundedUser,
-                                color: widget.isDarkMode
-                                    ? Colors.white.withOpacity(0.7)
-                                    : Colors.black.withOpacity(0.7),
-                                size: 28,
-                              ),
-                            ),
-                    ),
+                    child: ClipOval(child: _buildPhotoContent()),
                   ),
                 ),
               ),
@@ -217,7 +219,7 @@ class _ProfilePhotoPickerState extends State<ProfilePhotoPicker> {
         ),
         const SizedBox(height: 12),
         Text(
-          'Tap to add profile photo',
+          _hasPhoto ? 'Tap to change profile photo' : 'Tap to add profile photo',
           style: TextStyle(
             color: widget.isDarkMode
                 ? Colors.white.withOpacity(0.68)
@@ -227,6 +229,59 @@ class _ProfilePhotoPickerState extends State<ProfilePhotoPicker> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPhotoContent() {
+    if (_selectedImage != null) {
+      return Image.file(
+        File(_selectedImage!.path),
+        width: 90,
+        height: 90,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _placeholderIcon(),
+      );
+    }
+
+    final remote = widget.remoteImageUrl?.trim();
+    if (remote != null && remote.isNotEmpty) {
+      return Image.network(
+        remote,
+        width: 90,
+        height: 90,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => _placeholderIcon(),
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: widget.isDarkMode
+                    ? Colors.white.withOpacity(0.5)
+                    : Colors.black.withOpacity(0.4),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return _placeholderIcon();
+  }
+
+  Widget _placeholderIcon() {
+    return Center(
+      child: HugeIcon(
+        icon: HugeIcons.strokeRoundedUser,
+        color: widget.isDarkMode
+            ? Colors.white.withOpacity(0.7)
+            : Colors.black.withOpacity(0.7),
+        size: 28,
+      ),
     );
   }
 }

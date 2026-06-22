@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+
+import '../client/widgets/client_home_theme.dart';
 
 class HomeInfoPill extends StatelessWidget {
   final String text;
@@ -13,19 +16,19 @@ class HomeInfoPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: isDarkMode
-            ? Colors.white.withOpacity(0.06)
-            : Colors.black.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
+            ? AppColors.accent.withValues(alpha: 0.1)
+            : AppColors.accentSurface,
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         text,
         style: TextStyle(
-          color: isDarkMode ? Colors.white70 : Colors.black87,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+          color: ClientHomeTheme.accent(isDarkMode),
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
         ),
       ),
     );

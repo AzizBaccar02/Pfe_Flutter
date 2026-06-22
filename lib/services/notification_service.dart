@@ -7,47 +7,16 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import '../conf/api_config.dart';
 import '../models/app_notification_model.dart';
 import 'auth_service.dart';
 
 class NotificationService {
-  static String get _baseUrl {
-    if (kIsWeb) {
-      return 'http://127.0.0.1:8000';
-    }
+  static String get _baseUrl => ApiConfig.httpBaseUrl;
 
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'http://10.0.2.2:8000';
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        return 'http://127.0.0.1:8000';
-      default:
-        return 'http://127.0.0.1:8000';
-    }
-  }
+  static String get _socketBaseUrl => ApiConfig.wsBaseUrl;
 
-  static String get _socketBaseUrl {
-    if (kIsWeb) {
-      return 'ws://127.0.0.1:8000';
-    }
-
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'ws://10.0.2.2:8000';
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        return 'ws://127.0.0.1:8000';
-      default:
-        return 'ws://127.0.0.1:8000';
-    }
-  }
-
-  static Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+  static Uri _uri(String path) => ApiConfig.httpUri(path);
 
   static Future<Map<String, String>> _authHeaders() async {
     final token = await AuthService.getAccessToken();
@@ -88,9 +57,11 @@ class NotificationService {
   }
 
   static Future<void> markAsRead(int notificationId) async {
+    if (notificationId <= 0) return;
+
     await _patchJson(
       path: '/api/notifications/me/$notificationId/read/',
-      payload: {},
+      payload: const {},
       expectedStatusCode: 200,
     );
   }
@@ -151,15 +122,37 @@ class NotificationService {
       return 0;
     }
 
-    return _parseInt(decoded['unread_count']) ?? 0;
+    return _parseInt(decoded['unread_count']) ??
+        _parseInt(decoded['unreadCount']) ??
+        0;
   }
 
+  /// Marks every notification as read (bulk endpoint, then one-by-one fallback).
   static Future<void> markAllAsRead() async {
-    await _patchJson(
-      path: '/api/notifications/me/read-all/',
-      payload: {},
-      expectedStatusCode: 200,
-    );
+    try {
+      await _patchJson(
+        path: '/api/notifications/me/read-all/',
+        payload: const {},
+        expectedStatusCode: 200,
+      );
+      debugPrint('[NOTIFICATION_SERVICE] markAllAsRead: bulk OK');
+      return;
+    } on NotificationServiceException catch (e) {
+      debugPrint('[NOTIFICATION_SERVICE] markAllAsRead bulk failed: $e');
+    }
+
+    final items = await getMyNotifications();
+    final unread = items.where((item) => !item.isRead).toList();
+
+    for (final item in unread) {
+      try {
+        await markAsRead(item.id);
+      } on NotificationServiceException catch (e) {
+        debugPrint(
+          '[NOTIFICATION_SERVICE] markAsRead(${item.id}) failed: $e',
+        );
+      }
+    }
   }
 
   static Future<void> createNotification({
@@ -288,11 +281,17 @@ class NotificationService {
           )
           .timeout(const Duration(seconds: 20));
 
+      debugPrint(
+        '[NOTIFICATION_SERVICE] PATCH $path → ${response.statusCode}',
+      );
+
       final decoded = _decodeBody(response.body);
 
       if (response.statusCode == expectedStatusCode) {
         return decoded;
       }
+
+      debugPrint('[NOTIFICATION_SERVICE] PATCH error body: ${response.body}');
 
       throw NotificationServiceException(_extractErrorMessage(decoded));
     } on TimeoutException {

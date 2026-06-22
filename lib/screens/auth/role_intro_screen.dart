@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 
-import '../../conf/app_colors.dart';
 import 'login_screen.dart';
 import 'signup_screen.dart';
 
@@ -206,9 +207,9 @@ class _TopBackButton extends StatelessWidget {
               color: Colors.white.withOpacity(0.14),
             ),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.arrow_back_ios_new_rounded,
-            color: Colors.white,
+            color: AppColors.accentReadableOnDark,
             size: 18,
           ),
         ),

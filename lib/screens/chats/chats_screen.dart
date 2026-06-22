@@ -4,17 +4,21 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:provider/provider.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../conf/theme_provider.dart';
 import '../../models/chat_conversation_summary_model.dart';
 import '../../models/chat_message_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/chat_conversation_display_name_service.dart';
+import '../../services/chat_local_read_cursor.dart';
+import '../../services/app_realtime_coordinator.dart';
+import '../../services/chat_realtime_hub.dart';
 import '../../services/chat_service.dart';
+import '../../utils/chat_unread_merge.dart';
 import 'archived_chats_screen.dart';
 import 'chat_conversation_screen.dart';
 import 'widgets/chat_match_avatar.dart';
@@ -46,11 +50,12 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
   String? _errorMessage;
 
   int _currentUserId = 0;
+  String _viewerRole = '';
   List<ChatConversationSummaryModel> _chats = [];
   Set<int> _archivedChatIds = {};
 
-  WebSocketChannel? _userChatsInboxChannel;
-  StreamSubscription<dynamic>? _userChatsInboxSubscription;
+  StreamSubscription<Map<String, dynamic>>? _inboxHubSubscription;
+  StreamSubscription<void>? _coordinatorSubscription;
   Timer? _listPollTimer;
 
   final TextEditingController _searchController = TextEditingController();
@@ -117,6 +122,12 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
     _searchController.addListener(_onSearchChanged);
     _bootstrapChats();
     _startListPolling();
+    AppRealtimeCoordinator.instance.ensureStarted();
+    _coordinatorSubscription =
+        AppRealtimeCoordinator.instance.onRefresh.listen((_) {
+      if (!mounted || !widget.isTabActive) return;
+      _refreshChatsSilently();
+    });
   }
 
   @override
@@ -149,8 +160,8 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     _listPollTimer?.cancel();
-    _userChatsInboxSubscription?.cancel();
-    _userChatsInboxChannel?.sink.close();
+    _coordinatorSubscription?.cancel();
+    _inboxHubSubscription?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -161,7 +172,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshChatsSilently();
-      _connectUserChatsInboxSocket();
+      unawaited(ChatRealtimeHub.instance.ensureStarted());
       _startListPolling();
     } else if (state == AppLifecycleState.paused) {
       _listPollTimer?.cancel();
@@ -171,38 +182,33 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
 
   Future<void> _bootstrapChats() async {
     final storedUserId = await AuthService.getStoredUserId();
+    final storedRole = await AuthService.getStoredRole();
     final archivedIds = await _readArchivedChatIds();
 
     await ChatConversationDisplayNameService.instance.ensureLoaded();
+    await ChatLocalReadCursor.instance.ensureLoaded();
 
     if (!mounted) return;
 
     setState(() {
       _currentUserId = storedUserId ?? 0;
+      _viewerRole = (storedRole ?? '').toUpperCase();
       _archivedChatIds = archivedIds;
     });
 
     await _loadChats();
     if (mounted) {
-      await _connectUserChatsInboxSocket();
+      await _subscribeToInboxHub();
     }
   }
 
-  Future<void> _connectUserChatsInboxSocket() async {
-    try {
-      await _userChatsInboxSubscription?.cancel();
-      await _userChatsInboxChannel?.sink.close();
+  Future<void> _subscribeToInboxHub() async {
+    await ChatRealtimeHub.instance.ensureStarted();
 
-      final channel = await ChatService.connectToUserChatsInboxSocket();
-      _userChatsInboxChannel = channel;
-      _userChatsInboxSubscription = channel.stream.listen(
-        _onUserChatsInboxEvent,
-        onError: (_) {},
-        cancelOnError: false,
-      );
-    } catch (_) {
-      // Inbox socket is optional for REST-only flows.
-    }
+    await _inboxHubSubscription?.cancel();
+    _inboxHubSubscription = ChatRealtimeHub.instance.onInboxEvent.listen(
+      _onUserChatsInboxEvent,
+    );
   }
 
   void _onUserChatsInboxEvent(dynamic raw) {
@@ -257,9 +263,94 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
         _handleInboxNewMessage(data);
         return;
       }
+
+      if (type == 'message_seen' || type == 'messages_seen') {
+        _handleInboxReadReceipt(data);
+        return;
+      }
     } catch (_) {
       // Ignore malformed inbox payloads.
     }
+  }
+
+  void _handleInboxReadReceipt(Map<String, dynamic> data) {
+    final chatId = _parseInboxInt(data['chat_id']) ??
+        _parseInboxInt(data['chatId']) ??
+        (data['chat'] is Map ? _parseInboxInt((data['chat'] as Map)['id']) : null);
+
+    if (chatId == null || chatId <= 0) {
+      _refreshChatsSilently();
+      return;
+    }
+
+    final index = _chats.indexWhere((chat) => chat.id == chatId);
+    if (index < 0) {
+      _refreshChatsSilently();
+      return;
+    }
+
+    final readerId = _parseInboxInt(data['reader_id']) ??
+        _parseInboxInt(data['readerId']);
+    if (readerId != null && readerId == _currentUserId) {
+      return;
+    }
+
+    if (readerId != null && !_readerIsPeerForChat(_chats[index], readerId)) {
+      return;
+    }
+
+    final chat = _chats[index];
+    final last = chat.lastMessage;
+    if (last == null || !chat.isLastMessageFromViewer(_currentUserId)) {
+      _refreshChatsSilently();
+      return;
+    }
+
+    final messageId = _parseInboxInt(data['message_id']) ??
+        _parseInboxInt(data['messageId']);
+    if (messageId != null && messageId != last.id) {
+      _refreshChatsSilently();
+      return;
+    }
+
+    if (last.isRead) return;
+
+    final updatedLast = ChatLastMessageSummary(
+      id: last.id,
+      content: last.content,
+      senderId: last.senderId,
+      isRead: true,
+      sentAt: last.sentAt,
+    );
+
+    final merged = ChatUnreadMerge.mergeInboxRow(
+      chat: chat,
+      lastMessage: updatedLast,
+      viewerUserId: _currentUserId,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      final next = [..._chats];
+      next[index] = merged;
+      _chats = _sortChats(next);
+    });
+    widget.onChatStateChanged?.call();
+  }
+
+  bool _readerIsPeerForChat(ChatConversationSummaryModel chat, int readerId) {
+    if (readerId <= 0) return false;
+    if (readerId == _currentUserId) return false;
+
+    for (final user in [chat.otherUser, chat.client, chat.agent]) {
+      if (user == null) continue;
+      if (user.id > 0 && readerId == user.id) return true;
+      final uid = user.userId;
+      if (uid != null && uid > 0 && readerId == uid) return true;
+    }
+
+    return false;
   }
 
   void _handleInboxNewMessage(Map<String, dynamic> data) {
@@ -293,7 +384,19 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
       final serverUnread = _parseInboxInt(data['unread_count']) ??
           _parseInboxInt(data['unreadCount']);
       if (serverUnread != null) {
-        _patchChatUnread(chatId: chatId, unreadCount: serverUnread);
+        final index = _chats.indexWhere((chat) => chat.id == chatId);
+        if (index >= 0) {
+          final merged = ChatUnreadMerge.mergeChat(
+            server: _chats[index].copyWith(unreadCount: serverUnread),
+            previous: _chats[index],
+            viewerUserId: _currentUserId,
+          );
+          setState(() {
+            final next = [..._chats];
+            next[index] = merged;
+            _chats = _sortChats(next);
+          });
+        }
         widget.onChatStateChanged?.call();
         return;
       }
@@ -314,12 +417,11 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
       json: messageJson,
       clientId: chat.client?.id ?? 0,
       agentId: chat.agent?.id ?? 0,
+      clientUserId: chat.client?.userId,
+      agentUserId: chat.agent?.userId,
     );
 
     final isIncoming = !_senderIsViewer(message.senderId, chat);
-
-    final serverUnread = _parseInboxInt(data['unread_count']) ??
-        _parseInboxInt(data['unreadCount']);
 
     final lastSummary = ChatLastMessageSummary(
       id: message.id,
@@ -329,17 +431,17 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
       sentAt: message.sentAt,
     );
 
-    final nextUnread = serverUnread ??
-        (isIncoming ? chat.unreadCount + 1 : chat.unreadCount);
+    final merged = ChatUnreadMerge.mergeInboxRow(
+      chat: chat,
+      lastMessage: lastSummary,
+      viewerUserId: _currentUserId,
+    );
 
     if (!mounted) return;
 
     setState(() {
       final nextChats = [..._chats];
-      nextChats[index] = chat.copyWith(
-        lastMessage: lastSummary,
-        unreadCount: nextUnread,
-      );
+      nextChats[index] = merged;
       _chats = _sortChats(nextChats);
     });
 
@@ -350,27 +452,21 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
     if (!mounted) return;
 
     final index = _chats.indexWhere((c) => c.id == summary.id);
+    final previous = index >= 0 ? _chats[index] : null;
+    final merged = ChatUnreadMerge.mergeChat(
+      server: summary,
+      previous: previous,
+      viewerUserId: _currentUserId,
+    );
+
     setState(() {
       if (index >= 0) {
         final next = [..._chats];
-        next[index] = summary;
+        next[index] = merged;
         _chats = _sortChats(next);
       } else {
-        _chats = _sortChats([..._chats, summary]);
+        _chats = _sortChats([..._chats, merged]);
       }
-    });
-  }
-
-  void _patchChatUnread({required int chatId, required int unreadCount}) {
-    if (!mounted) return;
-
-    final index = _chats.indexWhere((c) => c.id == chatId);
-    if (index < 0) return;
-
-    setState(() {
-      final next = [..._chats];
-      next[index] = next[index].copyWith(unreadCount: unreadCount);
-      _chats = _sortChats(next);
     });
   }
 
@@ -414,16 +510,25 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
 
       if (!mounted) return;
 
-      final sorted = _sortChats(response.chats);
+      final merged = ChatUnreadMerge.mergeLists(
+        serverChats: response.chats,
+        previousChats: _chats,
+        viewerUserId: _currentUserId,
+      );
+      final sorted = _sortChats(merged);
       final validIds = sorted.map((c) => c.id).toSet();
       final previousArchived = _archivedChatIds;
       final prunedArchived =
           previousArchived.where((id) => validIds.contains(id)).toSet();
 
+      final role = response.currentUserRole.trim();
       setState(() {
         _chats = sorted;
         _archivedChatIds = prunedArchived;
         _errorMessage = null;
+        if (role.isNotEmpty) {
+          _viewerRole = role.toUpperCase();
+        }
       });
 
       if (prunedArchived.length != previousArchived.length) {
@@ -465,17 +570,26 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
 
       if (!mounted) return;
 
-      final sortedChats = _sortChats(response.chats);
+      final merged = ChatUnreadMerge.mergeLists(
+        serverChats: response.chats,
+        previousChats: _chats,
+        viewerUserId: _currentUserId,
+      );
+      final sortedChats = _sortChats(merged);
       final validIds = sortedChats.map((c) => c.id).toSet();
       final previousArchived = _archivedChatIds;
       final prunedArchived =
           previousArchived.where((id) => validIds.contains(id)).toSet();
       final nextUnreadCount = _sumUnreadForViewer(sortedChats);
+      final role = response.currentUserRole.trim();
 
       setState(() {
         _chats = sortedChats;
         _archivedChatIds = prunedArchived;
         _errorMessage = null;
+        if (role.isNotEmpty) {
+          _viewerRole = role.toUpperCase();
+        }
       });
 
       if (prunedArchived.length != previousArchived.length) {
@@ -521,6 +635,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
 
     if (!mounted) return;
 
+    ChatUnreadMerge.trustServerUnreadForChat(chat.id);
     await _loadChats(showLoading: false);
     widget.onChatStateChanged?.call();
   }
@@ -568,6 +683,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
           behavior: SnackBarBehavior.floating,
         ),
       );
+
     } on ChatServiceException catch (e) {
       if (!mounted) return;
 
@@ -595,7 +711,8 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete conversation'),
         content: Text(
-          'Remove "${chat.displayName}" from your list? This cannot be undone once the server supports it.',
+          'Remove "${chat.displayName}" from your list only? '
+          'The other user will still have this conversation.',
         ),
         actions: [
           TextButton(
@@ -616,12 +733,24 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
     if (confirmed != true || !mounted) return;
 
     try {
-      await ChatService.deleteChat(chatId: chat.id);
+      final result = await ChatService.deleteChat(chatId: chat.id);
 
       if (!mounted) return;
 
+      if (!result.deletedForSelfOnly) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This conversation could not be removed from your side only.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
       setState(() {
-        _chats = _chats.where((item) => item.id != chat.id).toList();
+        _chats = _chats.where((item) => item.id != result.chatId).toList();
         _archivedChatIds = {..._archivedChatIds}..remove(chat.id);
       });
 
@@ -703,6 +832,7 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
         builder: (ctx) => ArchivedChatsScreen(
           chats: archived,
           currentUserId: _currentUserId,
+          viewerRole: _viewerRole,
           backgroundColor: backgroundColor,
           primaryTextColor: primaryTextColor,
           secondaryTextColor: secondaryTextColor,
@@ -728,16 +858,13 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
 
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final backgroundColor =
-        isDarkMode ? const Color(0xFF000000) : const Color(0xFFF3F4F6);
+        isDarkMode ? const Color(0xFF000000) : Colors.white;
 
     final cardColor =
         isDarkMode ? const Color(0xFF111827) : Colors.white;
-
-    final softColor =
-        isDarkMode ? const Color(0xFF1F2937) : const Color(0xFFE5E7EB);
 
     final primaryTextColor =
         isDarkMode ? Colors.white : const Color(0xFF111827);
@@ -765,8 +892,8 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
                 )
               : _chats.isEmpty
                   ? _EmptyChatsState(
-                      cardColor: cardColor,
-                      softColor: softColor,
+                      isDarkMode: isDarkMode,
+                      viewerRole: _viewerRole,
                       primaryTextColor: primaryTextColor,
                       secondaryTextColor: secondaryTextColor,
                     )
@@ -776,13 +903,15 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
                       child: ListView(
                         padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
                         children: [
-                          _SectionTitle(
-                            title: 'Active Offers',
+                          _ActiveOffersHeader(
+                            count: _activeOffersChats.length,
                             primaryTextColor: primaryTextColor,
+                            secondaryTextColor: secondaryTextColor,
+                            accentColor: accentGreen,
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 10),
                           SizedBox(
-                            height: 110,
+                            height: ChatMatchAvatar.listHeight,
                             child: ListView.separated(
                               scrollDirection: Axis.horizontal,
                               itemCount: _activeOffersChats.length,
@@ -794,6 +923,8 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
                                 return ChatMatchAvatar(
                                   chat: chat,
                                   currentUserId: _currentUserId,
+                                  viewerRole: _viewerRole,
+                                  matchedAgents: widget.matchedAgents,
                                   primaryTextColor: primaryTextColor,
                                   secondaryTextColor: secondaryTextColor,
                                   onTap: () => _openConversation(chat),
@@ -845,6 +976,8 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
                               return ChatTile(
                                 chat: chat,
                                 currentUserId: _currentUserId,
+                                viewerRole: _viewerRole,
+                                matchedAgents: widget.matchedAgents,
                                 conversationTitle:
                                     ChatConversationDisplayNameService
                                         .instance
@@ -867,10 +1000,12 @@ class _ChatsScreenState extends State<ChatsScreen> with WidgetsBindingObserver {
   }
 
   int _sumUnreadForViewer(List<ChatConversationSummaryModel> chats) {
+    final cursor = ChatLocalReadCursor.instance;
+
     return chats.fold<int>(
       0,
       (total, chat) =>
-          total + chat.effectiveUnreadCountForViewer(_currentUserId),
+          total + cursor.displayUnreadCount(chat, _currentUserId),
     );
   }
 
@@ -954,7 +1089,7 @@ class _ChatsSearchBar extends StatelessWidget {
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
-              cursorColor: const Color(0xFF22C55E),
+              cursorColor: AppColors.accent,
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
@@ -1043,24 +1178,88 @@ class _ArchivedRow extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
+class _ActiveOffersHeader extends StatelessWidget {
+  final int count;
   final Color primaryTextColor;
+  final Color secondaryTextColor;
+  final Color accentColor;
 
-  const _SectionTitle({
-    required this.title,
+  const _ActiveOffersHeader({
+    required this.count,
     required this.primaryTextColor,
+    required this.secondaryTextColor,
+    required this.accentColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: TextStyle(
-        color: primaryTextColor,
-        fontSize: 19,
-        fontWeight: FontWeight.w900,
-        letterSpacing: -0.3,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          'Active offers',
+          style: TextStyle(
+            color: primaryTextColor,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.2,
+            height: 1.2,
+          ),
+        ),
+        if (count > 0) ...[
+          const SizedBox(width: 6),
+          _CompactCountBadge(
+            count: count,
+            accentColor: accentColor,
+          ),
+        ],
+        const Spacer(),
+        Text(
+          'Tap to open chat',
+          style: TextStyle(
+            color: secondaryTextColor,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Small count pill beside section titles (not a large circle).
+class _CompactCountBadge extends StatelessWidget {
+  final int count;
+  final Color accentColor;
+
+  const _CompactCountBadge({
+    required this.count,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+
+    return Container(
+      height: 16,
+      constraints: BoxConstraints(
+        minWidth: label.length > 1 ? 20 : 16,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: accentColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: accentColor,
+          fontSize: 9,
+          fontWeight: FontWeight.w600,
+          height: 1,
+        ),
       ),
     );
   }
@@ -1083,7 +1282,7 @@ class _ChatsErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     return Center(
       child: Padding(
@@ -1149,21 +1348,38 @@ class _ChatsErrorState extends StatelessWidget {
 }
 
 class _EmptyChatsState extends StatelessWidget {
-  final Color cardColor;
-  final Color softColor;
+  final bool isDarkMode;
+  final String viewerRole;
   final Color primaryTextColor;
   final Color secondaryTextColor;
 
   const _EmptyChatsState({
-    required this.cardColor,
-    required this.softColor,
+    required this.isDarkMode,
+    required this.viewerRole,
     required this.primaryTextColor,
     required this.secondaryTextColor,
   });
 
+  String get _subtitle {
+    if (viewerRole == 'AGENT') {
+      return 'Your client conversations will appear here once you are '
+          'accepted for an offer.';
+    }
+    if (viewerRole == 'CLIENT') {
+      return 'Your conversations with agents will appear here once you '
+          'accept a match for your offer.';
+    }
+    return 'Your conversations will appear here once a job match is confirmed.';
+  }
+
   @override
   Widget build(BuildContext context) {
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
+
+    final cardColor = isDarkMode ? Colors.black : Colors.white;
+    final borderColor = isDarkMode
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.06);
 
     return Center(
       child: Padding(
@@ -1174,6 +1390,16 @@ class _EmptyChatsState extends StatelessWidget {
           decoration: BoxDecoration(
             color: cardColor,
             borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: borderColor),
+            boxShadow: isDarkMode
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1182,7 +1408,7 @@ class _EmptyChatsState extends StatelessWidget {
                 width: 74,
                 height: 74,
                 decoration: BoxDecoration(
-                  color: accentGreen.withOpacity(0.10),
+                  color: accentGreen.withOpacity(isDarkMode ? 0.12 : 0.10),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: const Center(
@@ -1204,12 +1430,13 @@ class _EmptyChatsState extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                'When a client accepts an interested agent, the conversation will appear here.',
+                _subtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: secondaryTextColor,
                   fontSize: 14,
                   height: 1.55,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],

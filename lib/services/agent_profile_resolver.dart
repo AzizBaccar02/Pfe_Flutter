@@ -66,8 +66,10 @@ class AgentProfileResolver {
 
   static AgentProfileModel? _fromInteraction(OfferInteractionModel i) {
     return AgentProfileModel(
+      userId: i.agentUserId,
       firstName: _firstNameFromFull(i.agentName),
       lastName: _lastNameFromFull(i.agentName),
+      email: i.agentEmail?.trim() ?? '',
       phone: i.agentPhone ?? '',
       photoUrl: i.agentPhotoUrl ?? '',
       bio: i.agentBio ?? '',
@@ -92,8 +94,10 @@ class AgentProfileResolver {
     if (base == null) return patch;
 
     return AgentProfileModel(
+      userId: patch.userId ?? base.userId,
       firstName: patch.firstName.isNotEmpty ? patch.firstName : base.firstName,
       lastName: patch.lastName.isNotEmpty ? patch.lastName : base.lastName,
+      email: patch.email.isNotEmpty ? patch.email : base.email,
       phone: patch.phone.isNotEmpty ? patch.phone : base.phone,
       photoUrl: patch.photoUrl.isNotEmpty ? patch.photoUrl : base.photoUrl,
       bio: patch.bio.isNotEmpty ? patch.bio : base.bio,
@@ -117,6 +121,7 @@ class AgentProfileResolver {
     return AgentProfileModel(
       firstName: _firstNameFromFull(name),
       lastName: _lastNameFromFull(name),
+      email: fallbackEmail?.trim() ?? '',
       phone: '',
       photoUrl: fallbackPhotoUrl ?? '',
       bio: '',

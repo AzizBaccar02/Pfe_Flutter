@@ -1,20 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'conf/app_colors.dart';
+import 'conf/app_providers.dart';
 import 'conf/theme_provider.dart';
 import 'conf/user_profile_provider.dart';
 import 'screens/auth/complete_profile_prompt_screen.dart';
 import 'screens/auth/role_selection_screen.dart';
 import 'screens/offers/agent/agent_main_screen.dart';
 import 'screens/offers/client/client_main_screen.dart';
+import 'services/app_navigator.dart';
 import 'services/auth_service.dart';
+import 'widgets/global_notification_overlay.dart';
 
 void main() {
+  final themeProvider = ThemeProvider();
+  final profileProvider = UserProfileProvider();
+
+  AppProviders.register(
+    themeProvider: themeProvider,
+    profileProvider: profileProvider,
+  );
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => UserProfileProvider()),
+        ChangeNotifierProvider.value(value: themeProvider),
+        ChangeNotifierProvider.value(value: profileProvider),
       ],
       child: const MyApp(),
     ),
@@ -30,15 +42,43 @@ class MyApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'JobMatch App',
+      navigatorKey: AppNavigator.key,
+      builder: (context, child) {
+        return GlobalNotificationOverlay(
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       theme: ThemeData(
         brightness: Brightness.light,
-        primarySwatch: Colors.grey,
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.accent,
+          primary: AppColors.accent,
+          secondary: AppColors.accentReadable,
+          brightness: Brightness.light,
+        ),
+        appBarTheme: const AppBarTheme(
+          iconTheme: IconThemeData(
+            color: AppColors.accentReadable,
+            size: 18,
+          ),
+        ),
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
-        primarySwatch: Colors.grey,
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.accent,
+          primary: AppColors.accent,
+          secondary: AppColors.accentReadableOnDark,
+          brightness: Brightness.dark,
+        ),
+        appBarTheme: const AppBarTheme(
+          iconTheme: IconThemeData(
+            color: AppColors.accentReadableOnDark,
+            size: 18,
+          ),
+        ),
       ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: const AppStartupGate(),

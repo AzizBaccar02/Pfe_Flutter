@@ -1,6 +1,10 @@
 // lib/screens/offers/client/client_agent_interest_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
+import 'package:jobmatch_app/widgets/app_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 
@@ -10,10 +14,17 @@ import '../../../models/agent_profile_model.dart';
 import '../../../models/client_offer_model.dart';
 import '../../../models/interested_agent_model.dart';
 import '../../../models/offer_interaction_model.dart';
+import '../../../models/chat_conversation_summary_model.dart';
 import '../../../services/agent_profile_resolver.dart';
+import '../../../services/client_interaction_realtime.dart';
+import '../../../services/client_interaction_state_service.dart';
+import '../../../services/tab_auto_refresh.dart';
+import '../../../services/interaction_notification_flow.dart';
 import '../../../services/interaction_service.dart';
 import '../../../services/offer_reaction_service.dart';
+import '../../../utils/agent_identity_privacy.dart';
 import '../../../widgets/agent_profile_avatar.dart';
+import '../../chats/chat_conversation_screen.dart';
 import 'agent_public_profile_screen.dart';
 
 class ClientAgentInterestScreen extends StatefulWidget {
@@ -56,49 +67,104 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
   ClientOfferModel? _offer;
   String? _offerTitle;
   String? _photoUrl;
+  String? _fullAgentName;
+  ChatConversationSummaryModel? _existingChat;
+  bool _identityRevealed = false;
+  late final TabAutoRefresh _autoRefresh;
 
   @override
   void initState() {
     super.initState();
+    _autoRefresh = TabAutoRefresh(
+      onRefresh: ({showLoader = true}) => _load(showLoader: showLoader),
+      isTabActive: () => true,
+      pollInterval: const Duration(seconds: 15),
+      refreshWhenInactive: true,
+    );
+    _autoRefresh.attach();
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _isLoading = true;
-      _loadError = null;
-    });
+  @override
+  void dispose() {
+    _autoRefresh.dispose();
+    super.dispose();
+  }
+
+  String _agentLocationSummary(InterestedAgentModel agent) {
+    final parts = <String>[];
+    if (agent.city.trim().isNotEmpty) {
+      parts.add(agent.city.trim());
+    }
+    if (agent.completedJobs > 0) {
+      parts.add('${agent.completedJobs} jobs');
+    }
+    return parts.isEmpty ? '—' : parts.join(' · ');
+  }
+
+  Future<void> _load({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() {
+        _isLoading = true;
+        _loadError = null;
+      });
+    }
 
     try {
       _offer = _loadOfferFromMock();
       _offerTitle = _offer?.title ?? widget.offerTitle;
 
-      OfferInteractionModel? interaction;
+      await ClientInteractionStateService.ensureLoaded();
 
-      if (widget.interactionId != null && widget.interactionId! > 0) {
+      OfferInteractionModel? interaction =
+          await ClientInteractionStateService.resolveReaction(
+        reactionId: widget.interactionId,
+        offerId: widget.offerId,
+        agentId: widget.agentId,
+      );
+
+      if (interaction == null ||
+          InteractionNotificationFlow.isPending(interaction.status)) {
+        final pending =
+            await InteractionService.getPendingForOffer(widget.offerId);
+        for (final item in pending) {
+          if (_matchesAgent(item, widget.agentId)) {
+            interaction = item;
+            break;
+          }
+        }
+      }
+
+      _existingChat = ClientInteractionStateService.chatFor(
+        offerId: widget.offerId,
+        agentId: widget.agentId,
+      );
+
+      if (_existingChat != null &&
+          (interaction == null ||
+              !InteractionNotificationFlow.isRejected(interaction.status))) {
         interaction = OfferInteractionModel(
-          id: widget.interactionId!,
+          id: interaction?.id ?? widget.interactionId ?? 0,
           offerId: widget.offerId,
-          offerTitle: widget.offerTitle ?? '',
+          offerTitle: interaction?.offerTitle ??
+              widget.offerTitle ??
+              '',
           agentId: widget.agentId,
-          agentName: widget.agentName,
-          agentEmail: widget.agentEmail,
-          message: widget.interestMessage ?? '',
-          proposedPrice: widget.proposedPrice,
-          status: 'PENDING',
+          agentUserId: interaction?.agentUserId,
+          agentEmail: widget.agentEmail ?? interaction?.agentEmail,
+          agentName: interaction?.agentName ?? widget.agentName,
+          agentPhotoUrl: widget.avatarUrl ?? interaction?.agentPhotoUrl,
+          message: interaction?.message ?? widget.interestMessage ?? '',
+          proposedPrice: interaction?.proposedPrice ?? widget.proposedPrice,
+          status: 'ACCEPTED',
           react: true,
         );
       }
 
-      final pending = await InteractionService.getPendingForOffer(widget.offerId);
-      for (final item in pending) {
-        if (_matchesAgent(item, widget.agentId)) {
-          interaction = item;
-          break;
-        }
-      }
-
       _interaction = interaction;
+      _identityRevealed = _existingChat != null ||
+          (interaction != null &&
+              InteractionNotificationFlow.isAccepted(interaction.status));
       _offerTitle = interaction?.offerTitle ?? _offerTitle ?? widget.offerTitle;
 
       final resolvedName = _resolveAgentName(interaction);
@@ -117,6 +183,8 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
           ? _agentProfile!.displayName
           : resolvedName;
 
+      _fullAgentName = displayName;
+
       _photoUrl = _agentProfile!.photoUrl.trim().isNotEmpty
           ? _agentProfile!.photoUrl
           : widget.avatarUrl ?? interaction?.agentPhotoUrl;
@@ -125,9 +193,10 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
           ? _agentProfile!.city
           : '—';
 
-      _agent = OfferReactionService.findInterestedAgent(
+      _agent = await OfferReactionService.findInterestedAgent(
             offerId: widget.offerId,
             agentId: widget.agentId,
+            reactionId: interactionId,
           ) ??
           InterestedAgentModel(
             id: widget.agentId,
@@ -212,6 +281,17 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
     final agent = _agent;
     if (agent == null) return;
 
+    if (accepted && _isAccepted) {
+      await _openConversation();
+      return;
+    }
+
+    if (!accepted && _isRejected) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      return;
+    }
+
     setState(() {
       _isSubmitting = true;
     });
@@ -253,17 +333,39 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
         await OfferReactionService.clientRejectAgent(interaction: interaction);
       }
 
+      await ClientInteractionStateService.invalidate();
       await OfferReactionService.refreshNotificationBadge();
+      ClientInteractionRealtime.instance.notifyRefresh();
 
       if (!mounted) return;
 
-      Navigator.pop(context, accepted ? agent : null);
+      if (accepted) {
+        final chat = ClientInteractionStateService.chatFor(
+          offerId: widget.offerId,
+          agentId: widget.agentId,
+        );
+        if (chat != null) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatConversationScreen(chat: chat),
+            ),
+          );
+        }
+        Navigator.pop(context, agent);
+      } else {
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (!mounted) return;
 
+      final message = e is InteractionServiceException
+          ? e.message
+          : 'Something went wrong. Please try again.';
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text(message),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -284,22 +386,71 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
           agentId: widget.agentId,
           agentUserId: _interaction?.agentUserId,
           interactionId: _interaction?.id ?? widget.interactionId,
-          fallbackName: agent.name,
+          fallbackName: _fullAgentName ?? agent.name,
           fallbackEmail: widget.agentEmail ?? _interaction?.agentEmail,
           fallbackPhotoUrl: _photoUrl,
           initialProfile: _agentProfile,
+          identityRevealed: _identityRevealed,
         ),
       ),
+    );
+  }
+
+  String get _publicAgentLabel => _identityRevealed
+      ? (_fullAgentName ?? _agent?.name ?? 'Agent')
+      : AgentIdentityPrivacy.publicLabel(_fullAgentName ?? _agent?.name);
+
+  bool get _isAccepted =>
+      _existingChat != null ||
+      (_interaction != null &&
+          InteractionNotificationFlow.isAccepted(_interaction!.status));
+
+  bool get _isPending => !_isAccepted && !_isRejected;
+
+  bool get _isRejected =>
+      _interaction != null &&
+      InteractionNotificationFlow.isRejected(_interaction!.status);
+
+  Future<void> _openConversation() async {
+    if (_existingChat != null) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatConversationScreen(chat: _existingChat!),
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Open the Chats tab to continue this conversation.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  String? get _sanitizedInterestMessage {
+    final raw = widget.interestMessage?.trim().isNotEmpty == true
+        ? widget.interestMessage!.trim()
+        : _interaction?.message.trim();
+
+    return AgentIdentityPrivacy.sanitizeMessage(
+      message: raw,
+      fullName: _fullAgentName ?? _agent?.name,
+      offerTitle: _offerTitle ?? _agent?.offerTitle ?? 'your offer',
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = context.watch<ThemeProvider>().isDarkMode;
-    const accentGreen = Color(0xFF22C55E);
+    const accentGreen = AppColors.accent;
 
     final backgroundColor =
-        isDarkMode ? Colors.black : const Color(0xFFF3F4F6);
+        isDarkMode ? const Color(0xFF0D0D0D) : const Color(0xFFF3F4F6);
     final cardColor = isDarkMode ? const Color(0xFF141414) : Colors.white;
     final primaryTextColor = isDarkMode ? Colors.white : const Color(0xFF111827);
     final secondaryTextColor = isDarkMode
@@ -308,9 +459,7 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
 
     final agent = _agent;
     final offer = _offer;
-    final message = widget.interestMessage?.trim().isNotEmpty == true
-        ? widget.interestMessage!.trim()
-        : _interaction?.message.trim();
+    final message = _sanitizedInterestMessage;
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -318,14 +467,7 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
         backgroundColor: backgroundColor,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: accentGreen,
-            size: 18,
-          ),
-        ),
+        leading: AppBackButton(isDarkMode: isDarkMode),
         title: Text(
           'Agent profile',
           style: TextStyle(
@@ -361,7 +503,11 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                       children: [
                         Text(
-                          'Review this agent',
+                          _isAccepted
+                              ? 'Match active'
+                              : _isRejected
+                                  ? 'Interest declined'
+                                  : 'Review this agent',
                           style: TextStyle(
                             color: primaryTextColor,
                             fontSize: 22,
@@ -370,7 +516,11 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'They liked your offer. Accept to start working together or decline if it is not a fit.',
+                          _isAccepted
+                              ? 'You already accepted this agent. Continue the conversation in chat.'
+                              : _isRejected
+                                  ? 'You declined this agent for this offer.'
+                                  : 'They liked your offer. Accept to unlock their contact details and start working together.',
                           style: TextStyle(
                             color: secondaryTextColor,
                             fontSize: 14,
@@ -388,10 +538,16 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
                               GestureDetector(
                                 onTap: () => _openAgentProfile(agent),
                                 child: AgentProfileAvatar(
-                                  photoUrl: _photoUrl,
-                                  displayName: agent.name,
+                                  photoUrl:
+                                      _identityRevealed ? _photoUrl : null,
+                                  displayName: _fullAgentName ?? agent.name,
                                   radius: 30,
-                                  initialsColor: primaryTextColor,
+                                  backgroundColor: isDarkMode
+                                      ? const Color(0xFF1F2937)
+                                      : const Color(0xFFE5E7EB),
+                                  initialsColor: isDarkMode
+                                      ? Colors.white
+                                      : const Color(0xFF374151),
                                 ),
                               ),
                               const SizedBox(width: 14),
@@ -411,33 +567,49 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
                                           children: [
                                             Flexible(
                                               child: Text(
-                                                agent.name,
+                                                _publicAgentLabel,
                                                 style: TextStyle(
-                                                  color: accentGreen,
+                                                  color: primaryTextColor,
                                                   fontSize: 18,
                                                   fontWeight: FontWeight.w800,
                                                   decoration:
                                                       TextDecoration.underline,
-                                                  decorationColor: accentGreen
-                                                      .withOpacity(0.45),
+                                                  decorationColor: primaryTextColor
+                                                      .withValues(alpha: 0.35),
                                                 ),
                                               ),
                                             ),
                                             const SizedBox(width: 4),
                                             Icon(
                                               Icons.chevron_right_rounded,
-                                              color: accentGreen,
+                                              color: secondaryTextColor,
                                               size: 20,
                                             ),
                                           ],
                                         ),
                                       ),
                                     ),
-                                    if (widget.agentEmail != null &&
-                                        widget.agentEmail!.isNotEmpty) ...[
-                                      const SizedBox(height: 4),
+                                    if (!_identityRevealed) ...[
+                                      const SizedBox(height: 6),
                                       Text(
-                                        widget.agentEmail!,
+                                        AgentIdentityPrivacy.profileGateHint,
+                                        style: TextStyle(
+                                          color: secondaryTextColor,
+                                          fontSize: 12.5,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ],
+                                    if (_identityRevealed &&
+                                        (widget.agentEmail?.isNotEmpty ==
+                                                true ||
+                                            _interaction?.agentEmail
+                                                    ?.isNotEmpty ==
+                                                true)) ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        widget.agentEmail ??
+                                            _interaction!.agentEmail!,
                                         style: TextStyle(
                                           color: secondaryTextColor,
                                           fontSize: 13,
@@ -446,7 +618,7 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
                                     ],
                                     const SizedBox(height: 8),
                                     Text(
-                                      '${agent.city} · ${agent.rating.toStringAsFixed(1)} ★ · ${agent.completedJobs} jobs',
+                                      _agentLocationSummary(agent),
                                       style: TextStyle(
                                         color: secondaryTextColor,
                                         fontSize: 13,
@@ -522,66 +694,92 @@ class _ClientAgentInterestScreenState extends State<ClientAgentInterestScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: ElevatedButton(
-                            onPressed:
-                                _isSubmitting ? null : () => _respond(accepted: true),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: accentGreen,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                        if (_isAccepted)
+                          SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: _openConversation,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: accentGreen,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Open conversation',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
-                            child: _isSubmitting
-                                ? const SizedBox(
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                      color: Colors.white,
+                          )
+                        else if (_isPending) ...[
+                          SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _respond(accepted: true),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: accentGreen,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: _isSubmitting
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Accept agent',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
                                     ),
-                                  )
-                                : const Text(
-                                    'Accept agent',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: OutlinedButton(
-                            onPressed: _isSubmitting
-                                ? null
-                                : () => _respond(accepted: false),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryTextColor,
-                              side: BorderSide(
-                                color: isDarkMode
-                                    ? Colors.white.withOpacity(0.14)
-                                    : Colors.black.withOpacity(0.12),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: const Text(
-                              'Decline',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: OutlinedButton(
+                              onPressed: _isSubmitting
+                                  ? null
+                                  : () => _respond(accepted: false),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: primaryTextColor,
+                                side: BorderSide(
+                                  color: isDarkMode
+                                      ? Colors.white.withValues(alpha: 0.14)
+                                      : Colors.black.withValues(alpha: 0.12),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Decline',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
     );

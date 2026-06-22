@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../client/widgets/client_home_theme.dart';
+
 class HomeSectionTitle extends StatelessWidget {
   final String title;
   final String? actionText;
@@ -16,10 +18,8 @@ class HomeSectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryTextColor = isDarkMode ? Colors.white : Colors.black;
-    final secondaryTextColor = isDarkMode
-        ? Colors.white.withOpacity(0.68)
-        : Colors.black.withOpacity(0.68);
+    final primaryText = ClientHomeTheme.primaryText(isDarkMode);
+    final accent = ClientHomeTheme.accent(isDarkMode);
 
     return Row(
       children: [
@@ -27,21 +27,39 @@ class HomeSectionTitle extends StatelessWidget {
           child: Text(
             title,
             style: TextStyle(
-              color: primaryTextColor,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+              color: primaryText,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.3,
             ),
           ),
         ),
         if (actionText != null && onActionTap != null)
-          GestureDetector(
-            onTap: onActionTap,
-            child: Text(
-              actionText!,
-              style: TextStyle(
-                color: secondaryTextColor,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onActionTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      actionText!,
+                      style: TextStyle(
+                        color: accent,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: accent,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

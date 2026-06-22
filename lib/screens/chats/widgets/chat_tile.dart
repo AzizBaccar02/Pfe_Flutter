@@ -1,16 +1,19 @@
 // lib/screens/chats/widgets/chat_tile.dart
 
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-
 import '../../../models/chat_conversation_summary_model.dart';
 import '../../../services/profile_service.dart';
 import 'chat_offer_label.dart';
+import '../../../services/chat_local_read_cursor.dart';
 import 'chat_unread_badge.dart';
 
 class ChatTile extends StatelessWidget {
   final ChatConversationSummaryModel chat;
   final int currentUserId;
+  final String viewerRole;
+  final List<dynamic>? matchedAgents;
   /// Resolved title (local nickname or server display name).
   final String conversationTitle;
   final String trailingText;
@@ -28,6 +31,8 @@ class ChatTile extends StatelessWidget {
     super.key,
     required this.chat,
     required this.currentUserId,
+    this.viewerRole = '',
+    this.matchedAgents,
     required this.conversationTitle,
     required this.trailingText,
     required this.primaryTextColor,
@@ -40,7 +45,7 @@ class ChatTile extends StatelessWidget {
     this.slidableGroupTag = 'chats_screen',
   });
 
-  static const _accentGreen = Color(0xFF22C55E);
+  static const _accentGreen = AppColors.accent;
   static const _closeOfferColor = Color(0xFFC9A227);
   static const _deleteColor = Color(0xFFE53935);
   static const _archiveColor = Color(0xFF6B7280);
@@ -51,11 +56,19 @@ class ChatTile extends StatelessWidget {
     required bool isPeerOnline,
   }) {
     final resolved = ProfileService.resolveMediaUrl(
-      chat.resolvePeerPhotoUrl(viewerUserId: currentUserId).trim(),
+      chat
+          .resolvePeerPhotoUrl(
+            viewerUserId: currentUserId,
+            viewerRole: viewerRole,
+          )
+          .trim(),
     );
     const radius = 26.0;
     final diameter = radius * 2;
-    final initials = chat.displayInitials;
+    final initials = chat.peerDisplayInitialsForViewer(
+      currentUserId,
+      viewerRole: viewerRole,
+    );
     final ringColor = isDarkMode ? Colors.black : Colors.white;
 
     Widget initialsLabel() {
@@ -133,10 +146,15 @@ class ChatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
-    final hasUnread = chat.hasUnreadIncomingForViewer(currentUserId);
-    final unreadCount = chat.effectiveUnreadCountForViewer(currentUserId);
+    final cursor = ChatLocalReadCursor.instance;
+    final hasUnread = cursor.hasIncomingUnread(chat, currentUserId);
+    final unreadCount = cursor.displayUnreadCount(chat, currentUserId);
     final lastMessage = chat.lastMessage;
     final isLastMessageMine = chat.isLastMessageFromViewer(currentUserId);
+    final showReadReceipt = cursor.showPeerReadReceiptOnList(
+      chat,
+      currentUserId,
+    );
     final isPeerOnline = chat.peerOnlineForViewer(currentUserId);
 
     final tile = Material(
@@ -184,15 +202,17 @@ class ChatTile extends StatelessWidget {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (isLastMessageMine && lastMessage != null) ...[
+                        if (isLastMessageMine &&
+                            lastMessage != null &&
+                            !hasUnread) ...[
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
                             child: Icon(
-                              lastMessage.isRead
+                              showReadReceipt
                                   ? Icons.done_all_rounded
                                   : Icons.done_rounded,
                               size: 14,
-                              color: lastMessage.isRead
+                              color: showReadReceipt
                                   ? _accentGreen
                                   : secondaryTextColor.withOpacity(0.82),
                             ),
@@ -248,7 +268,7 @@ class ChatTile extends StatelessWidget {
                                   ),
                                 ),
                                 if (hasUnread) ...[
-                                  const SizedBox(width: 6),
+                                  const SizedBox(width: 4),
                                   ChatUnreadBadge(count: unreadCount),
                                 ],
                               ],

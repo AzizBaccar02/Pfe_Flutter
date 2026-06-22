@@ -1,5 +1,12 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:jobmatch_app/conf/app_colors.dart';
 import 'package:hugeicons/hugeicons.dart';
+
+import '../../../utils/agent_identity_privacy.dart';
+import '../../../widgets/offer_cover_image.dart';
+import 'elegant_swipe_action_button.dart';
 
 class SwipeOfferCardData {
   final int id;
@@ -8,11 +15,13 @@ class SwipeOfferCardData {
   final String category;
   final String city;
   final String budget;
-  final String clientName;
+  final String clientFullName;
   final String description;
   final List<String> imageUrls;
   final List<String> skills;
   final List<String> highlights;
+  final String? locationLabel;
+  final String? matchScoreLabel;
 
   const SwipeOfferCardData({
     required this.id,
@@ -21,12 +30,19 @@ class SwipeOfferCardData {
     required this.category,
     required this.city,
     required this.budget,
-    required this.clientName,
+    this.clientFullName = '',
     required this.description,
     required this.imageUrls,
     required this.skills,
     required this.highlights,
+    this.locationLabel,
+    this.matchScoreLabel,
   });
+
+  /// Masked label for agents before match, e.g. "Client : MB".
+  String get clientDisplayLabel => AgentIdentityPrivacy.clientPublicLabel(
+        clientFullName.isEmpty ? null : clientFullName,
+      );
 }
 
 class OfferSwipeCard extends StatefulWidget {
@@ -93,19 +109,18 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
   }
 
   Color _feedbackColor() {
-    if (widget.dragDx > 0) return const Color(0xFF16A34A);
+    if (widget.dragDx > 0) return AppColors.accent;
     if (widget.dragDx < 0) return const Color(0xFFDC2626);
     return Colors.transparent;
   }
 
   double _feedbackOpacity() {
-    final value = (widget.dragDx.abs() / 120).clamp(0.0, 1.0);
-    return value * 0.16;
+    return (widget.dragDx.abs() / 120).clamp(0.0, 1.0) * 0.14;
   }
 
   String _feedbackText() {
-    if (widget.dragDx > 25) return 'LIKE';
-    if (widget.dragDx < -25) return 'NOPE';
+    if (widget.dragDx > 25) return 'INTEREST';
+    if (widget.dragDx < -25) return 'SKIP';
     return '';
   }
 
@@ -116,57 +131,102 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF1A1A1A),
-              Color(0xFF111111),
+            colors: [Color(0xFF1C1C1E), Color(0xFF0D0D0F)],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              HugeIcon(
+                icon: HugeIcons.strokeRoundedBriefcase01,
+                color: Colors.white.withValues(alpha: 0.35),
+                size: 48,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Offer image',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
             ],
           ),
         ),
       );
     }
 
-    if (path.startsWith('http')) {
-      return Image.network(
-        path,
-        width: double.infinity,
-        height: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) {
-          return Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF1A1A1A),
-                  Color(0xFF111111),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    }
-
-    return Image.asset(
-      path,
-      width: double.infinity,
-      height: double.infinity,
+    return OfferCoverImage(
+      imageUrl: path,
       fit: BoxFit.cover,
-      errorBuilder: (_, _, _) {
-        return Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF1A1A1A),
-                Color(0xFF111111),
-              ],
+      isDarkMode: widget.isDarkMode,
+    );
+  }
+
+  Widget _glassPanel({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.42),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.12),
             ),
           ),
-        );
-      },
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _categoryChip() {
+    final label = widget.offer.category.trim().isNotEmpty
+        ? widget.offer.category
+        : 'Job offer';
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.38),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.14),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              HugeIcon(
+                icon: HugeIcons.strokeRoundedBriefcase01,
+                color: Colors.white.withValues(alpha: 0.85),
+                size: 14,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -176,91 +236,59 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
         ? widget.offer.imageUrls[_currentImageIndex]
         : '';
 
-    final actionBackground =
-        widget.isDarkMode ? const Color(0xFF1A1A1A) : Colors.white;
-
     final shadowColor = widget.isDarkMode
-        ? Colors.black.withOpacity(0.35)
-        : Colors.black.withOpacity(0.10);
+        ? Colors.black.withValues(alpha: 0.4)
+        : Colors.black.withValues(alpha: 0.12);
+
+    final location =
+        widget.offer.locationLabel ?? widget.offer.city;
 
     return SizedBox.expand(
       child: Column(
         children: [
           Expanded(
             child: ClipRRect(
+              borderRadius: BorderRadius.circular(28),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   return Stack(
                     clipBehavior: Clip.hardEdge,
                     children: [
-                      /// Image only.
-                      /// The tap detector is added later in the stack.
+                      Positioned.fill(child: _buildImage(currentImage)),
+
                       Positioned.fill(
-                        child: _buildImage(currentImage),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withValues(alpha: 0.35),
+                                Colors.transparent,
+                                Colors.transparent,
+                                Colors.black.withValues(alpha: 0.55),
+                              ],
+                              stops: const [0.0, 0.22, 0.55, 1.0],
+                            ),
+                          ),
+                        ),
                       ),
 
-                      /// Swipe feedback color overlay
                       Positioned.fill(
                         child: IgnorePointer(
                           child: Container(
-                            color: _feedbackColor()
-                                .withOpacity(_feedbackOpacity()),
-                          ),
-                        ),
-                      ),
-
-                      /// Light full image overlay
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withOpacity(0.06),
-                                  Colors.transparent,
-                                  Colors.transparent,
-                                  Colors.black.withOpacity(0.08),
-                                ],
-                                stops: const [0.0, 0.18, 0.62, 1.0],
-                              ),
+                            color: _feedbackColor().withValues(
+                              alpha: _feedbackOpacity(),
                             ),
                           ),
                         ),
                       ),
 
-                      /// Bottom shadow, around 30% of the card
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        height: constraints.maxHeight * 0.30,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.black.withOpacity(0.00),
-                                  Colors.black.withOpacity(0.25),
-                                  Colors.black.withOpacity(0.55),
-                                  Colors.black.withOpacity(0.82),
-                                ],
-                                stops: const [0.0, 0.28, 0.70, 1.0],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      /// Image indicators
-                      if (widget.offer.imageUrls.isNotEmpty)
+                      if (widget.offer.imageUrls.length > 1)
                         Positioned(
-                          top: 12,
-                          left: 12,
-                          right: 12,
+                          top: 14,
+                          left: 14,
+                          right: 14,
                           child: IgnorePointer(
                             child: Row(
                               children: List.generate(
@@ -271,18 +299,19 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
 
                                   return Expanded(
                                     child: Container(
-                                      height: 4,
+                                      height: 3,
                                       margin: EdgeInsets.only(
                                         right: index ==
                                                 widget.offer.imageUrls.length -
                                                     1
                                             ? 0
-                                            : 6,
+                                            : 5,
                                       ),
                                       decoration: BoxDecoration(
                                         color: isActive
                                             ? Colors.white
-                                            : Colors.white.withOpacity(0.28),
+                                            : Colors.white
+                                                .withValues(alpha: 0.28),
                                         borderRadius:
                                             BorderRadius.circular(999),
                                       ),
@@ -294,59 +323,52 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
                           ),
                         ),
 
-                      /// Swipe label
                       Positioned(
-                        top: 42,
-                        left: widget.dragDx >= 0 ? 14 : null,
-                        right: widget.dragDx < 0 ? 14 : null,
-                        child: IgnorePointer(
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 120),
-                            opacity: _feedbackText().isEmpty ? 0 : 1,
+                        top: widget.offer.imageUrls.length > 1 ? 28 : 14,
+                        left: 14,
+                        child: _categoryChip(),
+                      ),
+
+                      if (_feedbackText().isNotEmpty)
+                        Positioned(
+                          top: 72,
+                          left: widget.dragDx >= 0 ? 18 : null,
+                          right: widget.dragDx < 0 ? 18 : null,
+                          child: IgnorePointer(
                             child: Transform.rotate(
-                              angle: widget.dragDx >= 0 ? -0.10 : 0.10,
+                              angle: widget.dragDx >= 0 ? -0.08 : 0.08,
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
+                                  horizontal: 14,
+                                  vertical: 8,
                                 ),
                                 decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
                                     color: widget.dragDx >= 0
-                                        ? const Color(0xFF22C55E)
+                                        ? AppColors.accent
                                         : const Color(0xFFEF4444),
-                                    width: 1.8,
+                                    width: 2,
                                   ),
-                                  borderRadius: BorderRadius.circular(12),
-                                  color: Colors.black.withOpacity(0.12),
+                                  color:
+                                      Colors.black.withValues(alpha: 0.2),
                                 ),
                                 child: Text(
                                   _feedbackText(),
                                   style: TextStyle(
                                     color: widget.dragDx >= 0
-                                        ? const Color(0xFF22C55E)
+                                        ? AppColors.accent
                                         : const Color(0xFFEF4444),
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w800,
-                                    letterSpacing: 1,
-                                    shadows: const [
-                                      Shadow(
-                                        color: Colors.black87,
-                                        blurRadius: 8,
-                                        offset: Offset(0, 2),
-                                      ),
-                                    ],
+                                    letterSpacing: 1.2,
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
 
-                      /// Main tap area for changing images.
-                      /// Left side = previous image.
-                      /// Right side = next image.
                       Positioned.fill(
                         child: GestureDetector(
                           behavior: HitTestBehavior.translucent,
@@ -355,84 +377,105 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
                         ),
                       ),
 
-                      /// Bottom text without required skills
                       Positioned(
-                        left: 16,
-                        right: 16,
+                        left: 14,
+                        right: 14,
                         bottom: 14,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: IgnorePointer(
+                        child: _glassPanel(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
                                 child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    if (widget.offer.matchScoreLabel !=
+                                            null &&
+                                        widget.offer.matchScoreLabel!
+                                            .isNotEmpty)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 5,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.accent
+                                              .withValues(alpha: 0.18),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: AppColors.accent
+                                                .withValues(alpha: 0.35),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          widget.offer.matchScoreLabel!,
+                                          style: const TextStyle(
+                                            color: AppColors.accent,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700,
+                                            letterSpacing: 0.4,
+                                          ),
+                                        ),
+                                      ),
+                                    if (widget.offer.matchScoreLabel !=
+                                            null &&
+                                        widget.offer.matchScoreLabel!
+                                            .isNotEmpty)
+                                      const SizedBox(height: 10),
                                     Text(
                                       widget.offer.title,
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                         color: Colors.white,
-                                        fontSize: 20,
+                                        fontSize: 18,
                                         fontWeight: FontWeight.w800,
-                                        height: 1.12,
-                                        shadows: [
-                                          Shadow(
-                                            color: Colors.black87,
-                                            blurRadius: 10,
-                                            offset: Offset(0, 3),
-                                          ),
-                                        ],
+                                        height: 1.2,
+                                        letterSpacing: -0.3,
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      widget.offer.category,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: Colors.white.withOpacity(0.92),
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Colors.black87,
-                                            blurRadius: 8,
-                                            offset: Offset(0, 2),
+                                    if (widget.offer.budget.trim().isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 6),
+                                        child: Text(
+                                          widget.offer.budget,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.78,
+                                            ),
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w500,
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 6),
+                                    const SizedBox(height: 8),
                                     Row(
                                       children: [
                                         HugeIcon(
                                           icon: HugeIcons
                                               .strokeRoundedLocation01,
-                                          color:
-                                              Colors.white.withOpacity(0.85),
-                                          size: 14,
+                                          color: Colors.white.withValues(
+                                            alpha: 0.7,
+                                          ),
+                                          size: 13,
                                         ),
-                                        const SizedBox(width: 6),
+                                        const SizedBox(width: 5),
                                         Expanded(
                                           child: Text(
-                                            widget.offer.city,
+                                            location,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                              color: Colors.white
-                                                  .withOpacity(0.85),
+                                              color: Colors.white.withValues(
+                                                alpha: 0.75,
+                                              ),
                                               fontSize: 12,
                                               fontWeight: FontWeight.w500,
-                                              shadows: const [
-                                                Shadow(
-                                                  color: Colors.black87,
-                                                  blurRadius: 8,
-                                                  offset: Offset(0, 2),
-                                                ),
-                                              ],
                                             ),
                                           ),
                                         ),
@@ -441,39 +484,34 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
                                   ],
                                 ),
                               ),
-                            ),
-
-                            /// Details button
-                            if (widget.showDetailsButton) ...[
-                              const SizedBox(width: 12),
-                              GestureDetector(
-                                onTap: widget.onDetailsTap,
-                                behavior: HitTestBehavior.opaque,
-                                child: Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.88),
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.16),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 4),
+                              if (widget.showDetailsButton) ...[
+                                const SizedBox(width: 10),
+                                GestureDetector(
+                                  onTap: widget.onDetailsTap,
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.14,
                                       ),
-                                    ],
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.22,
+                                        ),
+                                      ),
+                                    ),
+                                    child: const Icon(
                                       Icons.info_outline_rounded,
-                                      size: 20,
-                                      color: Colors.black87,
+                                      size: 19,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ],
@@ -482,78 +520,40 @@ class _OfferSwipeCardState extends State<OfferSwipeCard> {
               ),
             ),
           ),
-
-          /// Buttons below the card, not inside the image
           if (widget.showActions) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 14),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _CircleActionButton(
+                ElegantSwipeActionButton(
                   onTap: widget.onDislikeTap,
-                  backgroundColor: actionBackground,
-                  iconColor: const Color(0xFFEF4444),
                   icon: HugeIcons.strokeRoundedCancel01,
+                  iconColor: const Color(0xFFEF4444),
+                  borderColor:
+                      const Color(0xFFEF4444).withValues(alpha: 0.35),
+                  backgroundColor: widget.isDarkMode
+                      ? const Color(0xFF1A1A1A)
+                      : Colors.white,
                   shadowColor: shadowColor,
                 ),
-                const SizedBox(width: 22),
-                _CircleActionButton(
+                const SizedBox(width: 28),
+                ElegantSwipeActionButton(
                   onTap: widget.onLikeTap,
-                  backgroundColor: actionBackground,
-                  iconColor: const Color(0xFF10B981),
                   icon: HugeIcons.strokeRoundedFavourite,
+                  iconColor: AppColors.accent,
+                  borderColor:
+                      AppColors.accent.withValues(alpha: 0.45),
+                  backgroundColor: widget.isDarkMode
+                      ? const Color(0xFF1A1A1A)
+                      : Colors.white,
                   shadowColor: shadowColor,
+                  filled: true,
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _CircleActionButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final Color backgroundColor;
-  final Color iconColor;
-  final Color shadowColor;
-  final dynamic icon;
-
-  const _CircleActionButton({
-    required this.onTap,
-    required this.backgroundColor,
-    required this.iconColor,
-    required this.icon,
-    required this.shadowColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Center(
-          child: HugeIcon(
-            icon: icon,
-            color: iconColor,
-            size: 22,
-          ),
-        ),
       ),
     );
   }
